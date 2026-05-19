@@ -27,7 +27,7 @@ Packages don't bind to application semantics. The consumer supplies the challeng
 
 | Rust crate | Status | Purpose |
 |---|---|---|
-| `attestation-core` | **v0** | Canonical `Outcome` struct with BCS serde — shared by every per-platform crate |
+| `attestation-core` | **v0** | Common Rust types shared by every per-platform verifier crate: an `Outcome` return struct and the canonical `sources::*` identifier strings. Internal to the verifier toolchain — the on-chain side does not consume `Outcome`; each platform mirrors its Move `Payload` struct independently for the NSM `user_data` binding. |
 | `attest-apple` | **v0** | Parse and verify Apple App Attest attestation + assertion. X.509 chain validation across P-256 leaf and P-384 intermediates against Apple's root |
 | `enclave-server` | **v0** | Reference HTTP server. Runs verifiers inside a Nitro enclave; every response carries a fresh NSM attestation document the Move side verifies on-chain |
 | `attest-android` | planned | Parse and verify Android Key Attestation cert extensions |
@@ -44,24 +44,38 @@ Packages don't bind to application semantics. The consumer supplies the challeng
               └───────┬─────────┘
                       │ raw attestation blob
                       ▼
+       ┌─────────────────────────────────┐
+       │  AWS Nitro Enclave              │
+       │  (pinned EIF — PCR-identified)  │
+       │                                 │
+       │  1. Rust verifier parses the    │
+       │     blob, validates the chain   │
+       │  2. Requests a fresh NSM        │
+       │     attestation document whose  │
+       │     user_data = SHA-256(BCS(    │
+       │     verified outcome))          │
+       └────────────────┬────────────────┘
+                        │ NSM document
+                        │ (AWS-signed COSE_Sign1, ephemeral)
+                        ▼
+       ┌─────────────────────────────────┐
+       │  Move witness package           │
+       │                                 │
+       │  • sui::nitro_attestation       │
+       │    verifies AWS root signature  │
+       │  • PCRs match the on-chain      │
+       │    Policy object                │
+       │  • user_data hash binds payload │
+       │  • NSM timestamp gates freshness│
+       └────────────────┬────────────────┘
+                        │ Witness<Source> in PTB
+                        ▼
               ┌─────────────────┐
-              │  Rust verifier  │   ─ runs inside a Nautilus enclave
-              │  (per-platform) │     (or any trusted verifier env)
-              └───────┬─────────┘
-                      │ attestation outcome + Ed25519 signature
-                      ▼
-              ┌─────────────────┐
-              │ Move witness    │   ─ verify enclave signature,
-              │ package         │     emit Witness<Source>
-              └───────┬─────────┘
-                      │ Witness<Source> in PTB
-                      ▼
-              ┌─────────────────┐
-              │ Consumer dApp   │
+              │  Consumer dApp  │
               └─────────────────┘
 ```
 
-The heavy cryptographic parsing happens once, in Rust, inside a Nautilus enclave. The Move side verifies an enclave-signed attestation outcome — a small, fast operation — and produces a typed witness with provenance enforced by Move's type system.
+The heavy cryptographic parsing (X.509, CBOR, COSE) happens once, in Rust, inside a Nitro Enclave whose image is pinned by PCRs. Each verifier response carries its own fresh NSM attestation document — signed by AWS Nitro, not by the enclave — that binds the verified outcome via `user_data`. The Move side never trusts a long-lived signing key: every on-chain `verify` re-checks the Nitro signature, re-checks the PCRs against the on-chain `Policy`, and re-derives the payload hash. That's the "maximum on-chain checking" guarantee. On success the consumer receives a `Witness<Source>` whose source is enforced by Move's type system.
 
 ## Witness pattern
 
