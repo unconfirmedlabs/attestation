@@ -3,10 +3,6 @@ name = "attest_apple"
 edition = "2024"
 license = "Apache-2.0"
 authors = ["Unconfirmed Labs, Inc. (os@unconfirmed.com)"]
-published-at = "0x75991f659fc203d340701818760eb0f36a1b9e01a020e15ec7f19e91a760da23"
 
 [dependencies]
 attestation = { local = "../attestation" }
-
-[addresses]
-attest_apple = "0x75991f659fc203d340701818760eb0f36a1b9e01a020e15ec7f19e91a760da23"
