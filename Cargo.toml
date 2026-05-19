@@ -14,6 +14,7 @@ repository = "https://github.com/unconfirmedlabs/attestation"
 [workspace.dependencies]
 # Crypto
 p256 = { version = "0.13", features = ["ecdsa", "pem"] }
+p384 = { version = "0.13", features = ["ecdsa", "pem"] }
 sha2 = "0.10"
 
 # Encoding

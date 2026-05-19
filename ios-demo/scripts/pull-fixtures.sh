@@ -46,7 +46,7 @@ xcrun devicectl device copy from \
 # Move fixture JSONs into the test fixtures directory.
 shopt -s nullglob
 moved=0
-for f in "$STAGE"/Documents/dev_iphone_*.json; do
+for f in "$STAGE"/dev_iphone_*.json "$STAGE"/Documents/dev_iphone_*.json; do
   cp "$f" "$DEST_DIR/$(basename "$f")"
   echo "  pulled $(basename "$f")"
   moved=$((moved+1))
