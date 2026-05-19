@@ -34,3 +34,6 @@ ios-demo/AttestKitDemo/Info.plist
 
 # Logs
 *.log
+
+# Nitro enclave build artifacts
+enclave/out/
