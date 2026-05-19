@@ -9,12 +9,16 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     header
                     appInfo
+                    activeKeyBox
                     actionRow
                     if let error = vm.errorMessage {
                         errorView(error)
                     }
-                    if let capture = vm.lastCapture {
-                        resultView(capture)
+                    if let capture = vm.lastAttestation {
+                        attestationResult(capture)
+                    }
+                    if let capture = vm.lastAssertion {
+                        assertionResult(capture)
                     }
                     Spacer(minLength: 24)
                 }
@@ -28,7 +32,7 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text("attest-apple fixture capture")
                 .font(.headline)
-            Text("Generate a Secure Enclave key, attest it against a fresh challenge, and copy the result as a Rust test fixture.")
+            Text("Drive both Apple App Attest paths — attestation (one-time hardware proof) and assertion (per-payload signature) — and write fixtures the host can pull and verify on-chain.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -45,12 +49,41 @@ struct ContentView: View {
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
 
+    @ViewBuilder
+    private var activeKeyBox: some View {
+        if let active = vm.activeKey {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("Active SE key").font(.headline)
+                    Spacer()
+                    Button(role: .destructive) { vm.clearActiveKey() } label: {
+                        Label("Forget", systemImage: "trash")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                row("attested_key (X9.63 hex)", String(active.attestedKeyHex.prefix(32)) + "…")
+                row("keyId (base64)", String(active.keyId.prefix(20)) + "…")
+                row("app_id", active.appId)
+            }
+            .padding(12)
+            .background(.green.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+        } else {
+            Text("No active key. Tap **Attest new key** to bind one.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        }
+    }
+
     private var actionRow: some View {
-        HStack {
+        HStack(spacing: 12) {
             Button {
                 Task { await vm.attest() }
             } label: {
-                if vm.isWorking {
+                if vm.isAttesting {
                     ProgressView().controlSize(.small)
                 } else {
                     Label("Attest new key", systemImage: "key.viewfinder")
@@ -58,7 +91,20 @@ struct ContentView: View {
                 }
             }
             .buttonStyle(.borderedProminent)
-            .disabled(!vm.isSupported || vm.isWorking)
+            .disabled(!vm.isSupported || vm.isAttesting)
+
+            Button {
+                Task { await vm.assert() }
+            } label: {
+                if vm.isAsserting {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Label("Generate assertion", systemImage: "signature")
+                        .fontWeight(.semibold)
+                }
+            }
+            .buttonStyle(.bordered)
+            .disabled(!vm.isSupported || vm.isAsserting || vm.activeKey == nil)
 
             Spacer()
         }
@@ -73,24 +119,51 @@ struct ContentView: View {
             .background(.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
     }
 
-    private func resultView(_ capture: AttestationCapture) -> some View {
+    private func attestationResult(_ c: AttestationCapture) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Captured attestation").font(.headline)
 
-            field("key_id (hex)", capture.keyIdBytes.hex)
-            field("challenge (hex)", capture.challenge.hex)
+            field("attested_value (hex)", c.attestedPublicKey.hex)
+            field("key_id (hex)", c.keyIdBytes.hex)
+            field("challenge (hex)", c.challenge.hex)
             field("attestation_object (hex, truncated)",
-                  "\(capture.attestationObject.hex.prefix(120))…")
-            field("app_id", capture.appId)
-            field("production", String(capture.production))
-            if let name = vm.savedFileName {
+                  "\(c.attestationObject.hex.prefix(120))…")
+            field("app_id", c.appId)
+            field("production", String(c.production))
+            if let name = vm.savedAttestationFile {
                 field("saved to sandbox", "Documents/\(name)")
             }
 
             Button {
-                UIPasteboard.general.string = vm.fixtureJSON(capture)
+                UIPasteboard.general.string = vm.attestationFixtureJSON(c)
             } label: {
-                Label("Copy as Rust fixture JSON", systemImage: "doc.on.doc")
+                Label("Copy attestation fixture", systemImage: "doc.on.doc")
+                    .fontWeight(.semibold)
+            }
+            .buttonStyle(.bordered)
+            .padding(.top, 4)
+        }
+        .padding(12)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func assertionResult(_ c: AssertionCapture) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Captured assertion").font(.headline)
+
+            field("assertion_object (hex, truncated)",
+                  "\(c.assertionObject.hex.prefix(120))…")
+            field("client_data (hex)", c.clientData.hex)
+            field("attested_key (hex)", c.attestedPublicKey.hex)
+            field("app_id", c.appId)
+            if let name = vm.savedAssertionFile {
+                field("saved to sandbox", "Documents/\(name)")
+            }
+
+            Button {
+                UIPasteboard.general.string = vm.assertionFixtureJSON(c)
+            } label: {
+                Label("Copy assertion fixture", systemImage: "doc.on.doc")
                     .fontWeight(.semibold)
             }
             .buttonStyle(.bordered)
@@ -118,64 +191,94 @@ struct ContentView: View {
 
 @MainActor
 final class AttestViewModel: ObservableObject {
-    private let attest = AttestService()
+    private let service = AttestService()
 
-    @Published var lastCapture: AttestationCapture?
-    @Published var savedFileName: String?
+    @Published var lastAttestation: AttestationCapture?
+    @Published var lastAssertion: AssertionCapture?
+    @Published var savedAttestationFile: String?
+    @Published var savedAssertionFile: String?
     @Published var errorMessage: String?
-    @Published var isWorking = false
+    @Published var isAttesting = false
+    @Published var isAsserting = false
 
-    /// Toggle this when the app is signed for production App Attest (TestFlight
-    /// or App Store) instead of the development sandbox. Default false.
     let isProduction: Bool = false
-
-    var isSupported: Bool { attest.isSupported }
-
+    var isSupported: Bool { service.isSupported }
     var bundleId: String? { Bundle.main.bundleIdentifier }
 
-    /// `app_id = "<TEAMID>.<BUNDLE_ID>"`. The team id is hardcoded here for
-    /// dev convenience — update it (or read from a build setting) before
-    /// running on a fresh signing identity.
+    var activeKey: (keyId: String, attestedKeyHex: String, appId: String)? {
+        guard let a = service.activeKey else { return nil }
+        return (a.keyId, a.attestedKey.hex, a.appId)
+    }
+
+    /// `app_id = "<TEAMID>.<BUNDLE_ID>"`.
     private let teamId: String = "5354N269JS"
 
     func attest() async {
-        guard let bundleId else {
-            errorMessage = "No bundle identifier."
-            return
-        }
+        guard let bundleId else { errorMessage = "No bundle identifier."; return }
         let appId = "\(teamId).\(bundleId)"
 
-        isWorking = true
-        defer { isWorking = false }
+        isAttesting = true
+        defer { isAttesting = false }
 
-        // Fresh 32-byte challenge.
         var challenge = Data(count: 32)
-        let result = challenge.withUnsafeMutableBytes { ptr in
-            SecRandomCopyBytes(kSecRandomDefault, 32, ptr.baseAddress!)
+        let s = challenge.withUnsafeMutableBytes {
+            SecRandomCopyBytes(kSecRandomDefault, 32, $0.baseAddress!)
         }
-        guard result == errSecSuccess else {
-            errorMessage = "SecRandomCopyBytes failed: \(result)"
+        guard s == errSecSuccess else {
+            errorMessage = "SecRandomCopyBytes failed: \(s)"
             return
         }
 
         do {
-            let capture = try await attest.attest(
-                challenge: challenge,
-                appId: appId,
-                production: isProduction
-            )
-            lastCapture = capture
+            let cap = try await service.attest(challenge: challenge, appId: appId, production: isProduction)
+            lastAttestation = cap
             errorMessage = nil
-            savedFileName = try saveFixture(capture)
+            savedAttestationFile = try saveAttestationFixture(cap)
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
-    func fixtureJSON(_ c: AttestationCapture) -> String {
+    func assert() async {
+        isAsserting = true
+        defer { isAsserting = false }
+
+        // Sample client_data — for the demo, just a JSON blob with a fresh nonce.
+        // Consumers in production would substitute their own payload (e.g., a
+        // BCS-encoded ListenBatch summary).
+        var nonce = Data(count: 16)
+        _ = nonce.withUnsafeMutableBytes {
+            SecRandomCopyBytes(kSecRandomDefault, 16, $0.baseAddress!)
+        }
+        let stamp = ISO8601DateFormatter().string(from: Date())
+        let json = "{\"demo\":\"AttestKitDemo\",\"timestamp\":\"\(stamp)\",\"nonce\":\"\(nonce.hex)\"}"
+        let clientData = Data(json.utf8)
+
+        do {
+            let cap = try await service.assert(clientData: clientData)
+            lastAssertion = cap
+            errorMessage = nil
+            savedAssertionFile = try saveAssertionFixture(cap)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func clearActiveKey() {
+        service.clearActiveKey()
+        lastAttestation = nil
+        lastAssertion = nil
+        savedAttestationFile = nil
+        savedAssertionFile = nil
+        // SwiftUI refresh: nudge a published property
+        objectWillChange.send()
+    }
+
+    func attestationFixtureJSON(_ c: AttestationCapture) -> String {
         """
         {
           "attestation_object_hex": "\(c.attestationObject.hex)",
+          "attested_value_hex": "\(c.attestedPublicKey.hex)",
           "key_id_hex": "\(c.keyIdBytes.hex)",
           "challenge_hex": "\(c.challenge.hex)",
           "app_id": "\(c.appId)",
@@ -184,25 +287,49 @@ final class AttestViewModel: ObservableObject {
         """
     }
 
-    /// Save the fixture to the app's Documents directory. The host pulls it
-    /// via `xcrun devicectl device copy from --domain-type appDataContainer`.
-    /// Filename is auto-numbered so multiple captures coexist.
-    private func saveFixture(_ c: AttestationCapture) throws -> String {
+    func assertionFixtureJSON(_ c: AssertionCapture) -> String {
+        """
+        {
+          "assertion_object_hex": "\(c.assertionObject.hex)",
+          "client_data_hex": "\(c.clientData.hex)",
+          "attested_key_hex": "\(c.attestedPublicKey.hex)",
+          "app_id": "\(c.appId)"
+        }
+        """
+    }
+
+    // MARK: - Sandbox persistence
+
+    private func saveAttestationFixture(_ c: AttestationCapture) throws -> String {
+        return try writeFixture(
+            prefix: "attestation",
+            json: attestationFixtureJSON(c),
+        )
+    }
+
+    private func saveAssertionFixture(_ c: AssertionCapture) throws -> String {
+        return try writeFixture(
+            prefix: "assertion",
+            json: assertionFixtureJSON(c),
+        )
+    }
+
+    private func writeFixture(prefix: String, json: String) throws -> String {
         let docs = try FileManager.default.url(
             for: .documentDirectory, in: .userDomainMask,
-            appropriateFor: nil, create: true
+            appropriateFor: nil, create: true,
         )
         let existing = (try? FileManager.default.contentsOfDirectory(atPath: docs.path)) ?? []
-        let nextIndex = existing
+        let next = existing
             .compactMap { name -> Int? in
-                guard name.hasPrefix("dev_iphone_") && name.hasSuffix(".json") else { return nil }
-                return Int(name.dropFirst("dev_iphone_".count).dropLast(".json".count))
+                guard name.hasPrefix("\(prefix)_") && name.hasSuffix(".json") else { return nil }
+                return Int(name.dropFirst(prefix.count + 1).dropLast(".json".count))
             }
             .max()
             .map { $0 + 1 } ?? 1
-        let name = String(format: "dev_iphone_%03d.json", nextIndex)
+        let name = String(format: "%@_%03d.json", prefix, next)
         let url = docs.appendingPathComponent(name)
-        try fixtureJSON(c).data(using: .utf8)!.write(to: url, options: .atomic)
+        try json.data(using: .utf8)!.write(to: url, options: .atomic)
         return name
     }
 }

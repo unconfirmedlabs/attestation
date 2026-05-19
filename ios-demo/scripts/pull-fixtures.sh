@@ -13,6 +13,9 @@ BUNDLE_ID="com.unconfirmedlabs.attestkitdemo"
 DEST_DIR="../rust/attest-apple/tests/fixtures"
 mkdir -p "$DEST_DIR"
 
+# Files we care about: attestation_NNN.json and assertion_NNN.json
+# (plus dev_iphone_*.json from older demo builds for backwards-compat).
+
 if [[ $# -ge 1 ]]; then
   UDID="$1"
 else
@@ -46,7 +49,9 @@ xcrun devicectl device copy from \
 # Move fixture JSONs into the test fixtures directory.
 shopt -s nullglob
 moved=0
-for f in "$STAGE"/dev_iphone_*.json "$STAGE"/Documents/dev_iphone_*.json; do
+for f in "$STAGE"/attestation_*.json "$STAGE"/Documents/attestation_*.json \
+         "$STAGE"/assertion_*.json "$STAGE"/Documents/assertion_*.json \
+         "$STAGE"/dev_iphone_*.json "$STAGE"/Documents/dev_iphone_*.json; do
   cp "$f" "$DEST_DIR/$(basename "$f")"
   echo "  pulled $(basename "$f")"
   moved=$((moved+1))

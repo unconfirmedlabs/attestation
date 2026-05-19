@@ -46,15 +46,17 @@ echo "==> target device (Core UDID): $CORE_UDID"
 # The first online iPhone entry maps to whichever phone is connected; for
 # multi-device setups, pass the legacy UDID via env LEGACY_UDID instead.
 LEGACY_UDID="${LEGACY_UDID:-$(
-  # First block of `xctrace list devices` is online physical devices;
-  # `Devices Offline` section starts later. Grab the first iPhone line in
-  # the first block, extract the trailing parenthesised UDID.
+  # Prefer the online block, then fall back to the offline block — xctrace's
+  # online/offline tracking lags behind reality. devicectl is authoritative
+  # for "is the device reachable now?" but xctrace is the only place that
+  # exposes the legacy UDID that provisioning profiles use.
   xcrun xctrace list devices 2>&1 \
-    | awk '/^== Devices ==/{flag=1; next} /^== Devices Offline ==/{flag=0} flag' \
+    | awk '/^== Devices ==/{section="online"} /^== Devices Offline ==/{section="offline"} /^== Simulators ==/{section=""} section=="online" || section=="offline" {print}' \
     | grep -E "^iPhone " \
     | head -1 \
     | grep -oE "\([0-9A-Fa-f-]+\)[[:space:]]*$" \
-    | tr -d '()'
+    | tr -d '()' \
+    || true
 )}"
 if [[ -z "${LEGACY_UDID:-}" ]]; then
   echo "could not detect legacy UDID via xctrace; pass it as: LEGACY_UDID=... ./scripts/run-device.sh"
