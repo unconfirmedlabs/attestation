@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "rust/attestation-core",
     "rust/attest-apple",
+    "rust/enclave-server",
 ]
 
 [workspace.package]
@@ -29,6 +30,18 @@ hex = "0.4"
 
 # Errors
 thiserror = "1"
+anyhow = "1"
+
+# Server
+tokio = { version = "1", features = ["full"] }
+axum = "0.7"
+tower = "0.5"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Ed25519
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+rand = "0.8"
 
 # Dev deps
 serde_json = "1"
