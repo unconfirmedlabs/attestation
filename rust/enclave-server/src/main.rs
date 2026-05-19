@@ -233,15 +233,39 @@ struct AppleRequest {
     production: bool,
 }
 
+/// The payload signed inside the kagi `IntentMessage<P>` wrapper for
+/// Apple App Attest. Field order must match the Move struct in
+/// `attest_apple::attest::ApplePayload` exactly (BCS is order-sensitive).
+#[derive(serde::Serialize)]
+struct ApplePayload {
+    attested_value: Vec<u8>,
+    challenge: Vec<u8>,
+    detail_hash: Vec<u8>,
+}
+
+/// Mirror of `kagi::enclave::IntentMessage<P>`.
+#[derive(serde::Serialize)]
+struct IntentMessage<P: serde::Serialize> {
+    intent: u8,
+    timestamp_ms: u64,
+    payload: P,
+}
+
+/// Intent scope byte for Apple App Attest attestation outcomes.
+/// Mirror of `attest_apple::attest::INTENT_APPLE_APP_ATTEST`.
+const INTENT_APPLE_APP_ATTEST: u8 = 0;
+
 #[derive(Serialize)]
 struct AttestResponse {
-    /// BCS-encoded `attestation_core::Outcome`. The Move side BCS-decodes
-    /// this and treats the result as the verified attestation outcome.
-    outcome_hex: String,
-    /// Ed25519 signature over the raw BCS bytes of the outcome.
+    /// Caller passes these fields back to `attest_apple::verify` on-chain;
+    /// the Move package reconstructs the same `IntentMessage<ApplePayload>`,
+    /// BCS-serializes, and verifies the signature against `Enclave.pk`.
+    attested_value_hex: String,
+    challenge_hex: String,
+    detail_hash_hex: String,
+    timestamp_ms: u64,
     signature_hex: String,
-    /// The enclave's Ed25519 public key. Same as `/health.public_key_hex`,
-    /// included here for client convenience.
+    /// Enclave's Ed25519 public key (informational; same as /health).
     public_key_hex: String,
 }
 
@@ -287,11 +311,25 @@ async fn attest_apple(
         clock_ms,
     )?;
 
-    let outcome_bytes = outcome.to_bcs()?;
-    let sig = state.signing_key.sign(&outcome_bytes);
+    // Wrap in a kagi IntentMessage<ApplePayload> and sign the BCS bytes.
+    let payload = ApplePayload {
+        attested_value: outcome.attested_value.clone(),
+        challenge: outcome.challenge.clone(),
+        detail_hash: outcome.detail_hash.clone(),
+    };
+    let intent = IntentMessage {
+        intent: INTENT_APPLE_APP_ATTEST,
+        timestamp_ms: outcome.timestamp_ms,
+        payload,
+    };
+    let intent_bytes = bcs::to_bytes(&intent)?;
+    let sig = state.signing_key.sign(&intent_bytes);
 
     Ok(Json(AttestResponse {
-        outcome_hex: hex::encode(&outcome_bytes),
+        attested_value_hex: hex::encode(&outcome.attested_value),
+        challenge_hex: hex::encode(&outcome.challenge),
+        detail_hash_hex: hex::encode(&outcome.detail_hash),
+        timestamp_ms: outcome.timestamp_ms,
         signature_hex: hex::encode(sig.to_bytes()),
         public_key_hex: hex::encode(state.verifying_key.to_bytes()),
     }))
