@@ -25,27 +25,49 @@ if [[ ! -d "$PROJECT" ]]; then
   xcodegen generate
 fi
 
-# Pick the device UDID.
+# Pick the device's modern Core Device UUID (for install/launch).
 if [[ $# -ge 1 ]]; then
-  UDID="$1"
+  CORE_UDID="$1"
 else
-  UDID=$(
+  CORE_UDID=$(
     xcrun devicectl list devices 2>/dev/null \
-      | awk '/available \(paired\)/ {print $(NF-2); exit}'
+      | grep "available (paired)" \
+      | grep -oE "[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}" \
+      | head -1
   )
-  if [[ -z "${UDID:-}" ]]; then
+  if [[ -z "${CORE_UDID:-}" ]]; then
     echo "no paired iOS device found. Plug in your phone and pair via Xcode."
     exit 1
   fi
 fi
-echo "==> target device: $UDID"
+echo "==> target device (Core UDID): $CORE_UDID"
 
-echo "==> xcodebuild build (Debug / iphoneos)"
+# The legacy 40-char UDID is what provisioning profiles use. xctrace knows it.
+# The first online iPhone entry maps to whichever phone is connected; for
+# multi-device setups, pass the legacy UDID via env LEGACY_UDID instead.
+LEGACY_UDID="${LEGACY_UDID:-$(
+  # First block of `xctrace list devices` is online physical devices;
+  # `Devices Offline` section starts later. Grab the first iPhone line in
+  # the first block, extract the trailing parenthesised UDID.
+  xcrun xctrace list devices 2>&1 \
+    | awk '/^== Devices ==/{flag=1; next} /^== Devices Offline ==/{flag=0} flag' \
+    | grep -E "^iPhone " \
+    | head -1 \
+    | grep -oE "\([0-9A-Fa-f-]+\)[[:space:]]*$" \
+    | tr -d '()'
+)}"
+if [[ -z "${LEGACY_UDID:-}" ]]; then
+  echo "could not detect legacy UDID via xctrace; pass it as: LEGACY_UDID=... ./scripts/run-device.sh"
+  exit 1
+fi
+echo "==> target device (legacy UDID): $LEGACY_UDID"
+
+echo "==> xcodebuild build (Debug / iphoneos, device-targeted for auto-provisioning)"
 xcodebuild \
   -project "$PROJECT" \
   -scheme "$SCHEME" \
   -configuration Debug \
-  -destination "generic/platform=iOS" \
+  -destination "platform=iOS,id=$LEGACY_UDID" \
   -derivedDataPath "$DERIVED" \
   -allowProvisioningUpdates \
   build \
@@ -58,11 +80,11 @@ APP="$DERIVED/Build/Products/Debug-iphoneos/AttestKitDemo.app"
 echo "==> built $APP"
 
 echo "==> installing on device"
-xcrun devicectl device install app --device "$UDID" "$APP"
+xcrun devicectl device install app --device "$CORE_UDID" "$APP"
 
 echo "==> launching"
 xcrun devicectl device process launch \
-  --device "$UDID" \
+  --device "$CORE_UDID" \
   --terminate-existing \
   "$BUNDLE_ID"
 
