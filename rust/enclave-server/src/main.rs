@@ -14,8 +14,11 @@
 //!   * Binds to `127.0.0.1:3000` by default; override with `ENCLAVE_BIND`.
 //!
 //! Endpoints:
-//!   * `GET  /health`       — returns the enclave's Ed25519 public key.
-//!   * `POST /attest/apple` — verifies Apple App Attest, returns signed Outcome.
+//!   * `GET  /health`                       — enclave Ed25519 public key + supported sources.
+//!   * `GET  /attestation`                  — fresh NSM doc binding the enclave pk (registration).
+//!   * `POST /attest/apple/attestation`     — Apple App Attest one-time hardware proof.
+//!   * `POST /attest/apple/assertion`       — Apple App Attest per-payload assertion.
+//!   * `POST /attest/android/attestation`   — Android Key Attestation chain.
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -80,6 +83,8 @@ async fn main() -> Result<()> {
         // Backward-compatible alias for the original endpoint path.
         .route("/attest/apple", post(attest_apple_attestation))
         .route("/attest/apple/assertion", post(attest_apple_assertion))
+        .route("/attest/android/attestation", post(attest_android_attestation))
+        .route("/attest/android", post(attest_android_attestation))
         .with_state(state);
 
     let bind = std::env::var("ENCLAVE_BIND").unwrap_or_else(|_| "127.0.0.1:3000".into());
@@ -173,7 +178,11 @@ async fn health(State(state): State<AppState>) -> Json<Health> {
     Json(Health {
         public_key_hex: hex::encode(state.verifying_key.to_bytes()),
         version: env!("CARGO_PKG_VERSION"),
-        sources: &[attestation_core::sources::APPLE_APP_ATTEST],
+        sources: &[
+            attestation_core::sources::APPLE_APP_ATTEST,
+            attestation_core::sources::APPLE_APP_ATTEST_ASSERTION,
+            attestation_core::sources::ANDROID_KEY_ATTEST,
+        ],
     })
 }
 
@@ -250,6 +259,8 @@ enum AttestError {
     InvalidHex(&'static str, hex::FromHexError),
     #[error("attest-apple verify failed: {0}")]
     VerifyFailed(#[from] attest_apple::Error),
+    #[error("attest-android verify failed: {0}")]
+    AndroidVerifyFailed(#[from] attest_android::Error),
     #[error("bcs encode failed: {0}")]
     Bcs(#[from] bcs::Error),
     #[error("NSM init failed (not running inside a Nitro enclave?)")]
@@ -430,4 +441,148 @@ async fn attest_apple_assertion(
         client_data_hex: hex::encode(&outcome.challenge),
         public_key_hex: hex::encode(state.verifying_key.to_bytes()),
     }))
+}
+
+// ---------- /attest/android ----------
+
+#[derive(Deserialize)]
+struct AndroidRequest {
+    /// X.509 chain, leaf first. Each entry is hex-encoded DER.
+    chain_hex: Vec<String>,
+    /// Hex-encoded challenge bytes the leaf's `attestationChallenge`
+    /// must equal exactly.
+    challenge_hex: String,
+    /// Minimum security level: `"software"`, `"tee"`, or `"strongbox"`.
+    /// Defaults to `"tee"` when omitted.
+    #[serde(default)]
+    min_security_level: Option<String>,
+    /// Require `verifiedBootState = Verified` (GREEN). Default `true`.
+    #[serde(default = "default_true")]
+    require_verified_boot: bool,
+    /// Require `rootOfTrust.deviceLocked = true`. Default `true`.
+    #[serde(default = "default_true")]
+    require_device_locked: bool,
+    /// Optional list of hex-encoded `verifiedBootKey` values to allow
+    /// when boot state is YELLOW (SelfSigned) — i.e., locked with a
+    /// user-installed key like GrapheneOS. Ignored when
+    /// `require_verified_boot = true`.
+    #[serde(default)]
+    allowed_self_signed_keys_hex: Vec<String>,
+    /// Optional Google `/attestation/status` JSON. If supplied, every
+    /// serial in the chain is checked.
+    #[serde(default)]
+    status_list_json: Option<String>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// Mirror of Move's `attest_android::attestation::AndroidPayload`. Field
+/// order must match the Move struct exactly (BCS is order-sensitive).
+#[derive(serde::Serialize)]
+struct AndroidPayload {
+    attested_value: Vec<u8>,
+    challenge: Vec<u8>,
+    detail_hash: Vec<u8>,
+}
+
+#[derive(Serialize)]
+struct AndroidResponse {
+    nsm_doc_hex: String,
+    /// DER-encoded `subjectPublicKeyInfo` of the attested key.
+    attested_value_hex: String,
+    challenge_hex: String,
+    detail_hash_hex: String,
+    public_key_hex: String,
+}
+
+async fn attest_android_attestation(
+    State(state): State<AppState>,
+    Json(req): Json<AndroidRequest>,
+) -> Result<Json<AndroidResponse>, AttestError> {
+    let chain: Vec<Vec<u8>> = req
+        .chain_hex
+        .iter()
+        .enumerate()
+        .map(|(i, h)| {
+            hex::decode(h).map_err(|e| {
+                AttestError::InvalidHex(Box::leak(format!("chain[{i}]").into_boxed_str()), e)
+            })
+        })
+        .collect::<Result<_, _>>()?;
+    let challenge = hex::decode(&req.challenge_hex)
+        .map_err(|e| AttestError::InvalidHex("challenge_hex", e))?;
+
+    let min_level = parse_security_level(req.min_security_level.as_deref())?;
+
+    let allowed_keys: Vec<Vec<u8>> = req
+        .allowed_self_signed_keys_hex
+        .iter()
+        .enumerate()
+        .map(|(i, h)| {
+            hex::decode(h).map_err(|e| {
+                AttestError::InvalidHex(
+                    Box::leak(format!("allowed_self_signed_keys_hex[{i}]").into_boxed_str()),
+                    e,
+                )
+            })
+        })
+        .collect::<Result<_, _>>()?;
+
+    let status_list = match req.status_list_json.as_deref() {
+        Some(json) => Some(attest_android::StatusList::from_json(json)?),
+        None => None,
+    };
+
+    let policy = attest_android::Policy {
+        min_security_level: min_level,
+        require_verified_boot: req.require_verified_boot,
+        allowed_self_signed_keys: &allowed_keys,
+        require_device_locked: req.require_device_locked,
+        status_list: status_list.as_ref(),
+    };
+
+    let stamp_ms: u64 = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+
+    let outcome: Outcome =
+        attest_android::verify_attestation(&chain, &challenge, &policy, stamp_ms)?;
+
+    let payload = AndroidPayload {
+        attested_value: outcome.attested_value.clone(),
+        challenge: outcome.challenge.clone(),
+        detail_hash: outcome.detail_hash.clone(),
+    };
+    let payload_bcs = bcs::to_bytes(&payload)?;
+    let payload_hash: [u8; 32] = Sha256::digest(&payload_bcs).into();
+
+    let nsm_doc = request_nsm_attestation(
+        state.verifying_key.to_bytes().to_vec(),
+        payload_hash.to_vec(),
+    )?;
+
+    Ok(Json(AndroidResponse {
+        nsm_doc_hex: hex::encode(&nsm_doc),
+        attested_value_hex: hex::encode(&outcome.attested_value),
+        challenge_hex: hex::encode(&outcome.challenge),
+        detail_hash_hex: hex::encode(&outcome.detail_hash),
+        public_key_hex: hex::encode(state.verifying_key.to_bytes()),
+    }))
+}
+
+fn parse_security_level(s: Option<&str>) -> Result<attest_android::SecurityLevel, AttestError> {
+    use attest_android::SecurityLevel;
+    Ok(match s.unwrap_or("tee") {
+        "software" => SecurityLevel::Software,
+        "tee" | "trustedenvironment" | "trusted_environment" => SecurityLevel::TrustedEnvironment,
+        "strongbox" => SecurityLevel::StrongBox,
+        other => {
+            return Err(AttestError::Nsm(format!(
+                "unknown min_security_level '{other}' (want software|tee|strongbox)"
+            )));
+        }
+    })
 }

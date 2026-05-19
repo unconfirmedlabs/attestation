@@ -21,7 +21,7 @@ Packages don't bind to application semantics. The consumer supplies the challeng
 |---|---|---|
 | `attestation` | **v0 deployed** | Base `Witness<Source>` type, used by all source packages |
 | `attest_apple` | **v0 deployed** | Apple App Attest — iOS Secure Enclave-backed P-256 keys. Two peer modules: `attestation` (one-time hardware proof) and `assertion` (per-payload signature) |
-| `attest_android` | planned | Android Key Attestation — StrongBox / TEE-backed keys (also WebAuthn `fmt: "android-key"`) |
+| `attest_android` | **v0 built** | Android Key Attestation — TEE / StrongBox-backed Keystore keys, X.509 chain anchored at Google's hardware attestation roots |
 | `attest_ntag` | planned | NXP NTAG 424 DNA originality signature — genuine NFC chips |
 | `attest_fido` | deferred | WebAuthn `fmt: "packed"` — security keys, self-attested authenticators |
 
@@ -29,8 +29,8 @@ Packages don't bind to application semantics. The consumer supplies the challeng
 |---|---|---|
 | `attestation-core` | **v0** | Canonical `Outcome` struct with BCS serde — shared by every per-platform crate |
 | `attest-apple` | **v0** | Parse and verify Apple App Attest attestation + assertion. X.509 chain validation across P-256 leaf and P-384 intermediates against Apple's root |
+| `attest-android` | **v0** | Parse and verify Android Key Attestation. Decodes the KeyMint `KeyDescription` ASN.1 extension at OID `1.3.6.1.4.1.11129.2.1.17`, validates X.509 chains across RSA-2048 and ECDSA P-384 roots, optional revocation status list check |
 | `enclave-server` | **v0** | Reference HTTP server. Runs verifiers inside a Nitro enclave; every response carries a fresh NSM attestation document the Move side verifies on-chain |
-| `attest-android` | planned | Parse and verify Android Key Attestation cert extensions |
 | `attest-ntag` | planned | Verify NXP NTAG 424 originality signature (P-224 ECDSA against NXP's root) |
 | `attest-fido` | deferred | Parse and verify WebAuthn packed attestation |
 
@@ -88,8 +88,9 @@ This gives:
 ## Status
 
 - **2026-05**: Apple App Attest verifier working end-to-end against real iPhone fixtures with Apple's root CA pinned. Both attestation and assertion verbs implemented. `enclave-server` runs inside an AWS Nitro Enclave on a `c6a.xlarge` host; each response carries a fresh NSM-signed attestation document the Move side verifies on-chain. Enclave registered via [`kagi`](https://github.com/unconfirmedlabs/kagi) — PCRs pinned in an immutable on-chain `Policy`. Full deploy + IDs in [`deployments/testnet.json`](./deployments/testnet.json), including the end-to-end Sui tx that verified a real iPhone attestation through the chain.
-- **Next**: capture broader iPhone fixture coverage; begin `attest_ntag`.
-- **Then**: `attest_android` and `attest_fido` once devices are on hand.
+- **2026-05 (cont.)**: `attest-android` + `attest_android` built against Google's published EC TEE sample chain. ASN.1 decoder for `KeyDescription` (custom extension OID `1.3.6.1.4.1.11129.2.1.17`), chain validation against both pinned Google attestation roots (RSA-2048 and ECDSA P-384), policy enforcement (security level, verifiedBootState, deviceLocked), optional revocation status list. `enclave-server` exposes `POST /attest/android/attestation`. Real-device validation pending Nothing Phone arrival.
+- **Next**: Nothing Phone end-to-end validation for `attest_android`; deploy `attest_android` to testnet; begin `attest_ntag`.
+- **Then**: `attest_fido` once a device is available.
 
 ### Testnet deployment
 

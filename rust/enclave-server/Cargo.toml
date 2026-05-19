@@ -14,6 +14,7 @@ path = "src/main.rs"
 [dependencies]
 attestation-core = { path = "../attestation-core" }
 attest-apple = { path = "../attest-apple" }
+attest-android = { path = "../attest-android" }
 
 # Server
 tokio = { workspace = true }
