@@ -100,8 +100,8 @@ A standalone design doc will land here as `docs/architecture.md` once stabilized
 
 ## Status
 
-- **2026-05**: repo bootstrapped + Apple App Attest v0 scaffolded + Move packages published to Sui testnet (see [`deployments/testnet.json`](./deployments/testnet.json)). Rust workspace (`attestation-core` + `attest-apple`) compiles cleanly with passing unit tests; Move packages (`attestation` base + `attest_apple` consumer) build cleanly with no warnings.
-- **Next**: tiny SwiftUI iOS demo app (`ios-demo/`) for capturing real device attestation objects; pin the Apple root CA; populate `rust/attest-apple/tests/fixtures/`; flip the integration test from `#[ignore]` to live.
+- **2026-05**: repo bootstrapped + Apple App Attest v0 scaffolded + Move packages published to Sui testnet (see [`deployments/testnet.json`](./deployments/testnet.json)). Rust workspace (`attestation-core` + `attest-apple`) compiles cleanly with passing unit tests; Move packages (`attestation` base + `attest_apple` consumer) build cleanly with no warnings. SwiftUI demo app for capturing real-device fixtures lives in [`ios-demo/`](./ios-demo/) — see its README for build + capture flow.
+- **Next**: capture the first device fixture via the iOS demo; pin Apple's App Attestation Root CA into `rust/attest-apple/src/roots.rs`; flip the integration test from `#[ignore]` to live.
 - **Then**: `attest_ntag` (chip + reader hardware on the way) and `attest_android` (waiting on a device).
 
 ### Testnet deployment

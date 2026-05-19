@@ -1,0 +1,43 @@
+# XcodeGen project spec for the attest-apple demo app.
+#
+# Install xcodegen (one-time): `brew install xcodegen`
+# Generate the .xcodeproj:     `cd ios-demo && xcodegen generate`
+# Open it:                     `open AttestKitDemo.xcodeproj`
+#
+# Then in Xcode → Signing & Capabilities, set your development team and
+# confirm "App Attest" is listed (the entitlement file does that already).
+
+name: AttestKitDemo
+options:
+  bundleIdPrefix: com.unconfirmedlabs.attestkitdemo
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    MARKETING_VERSION: "0.1"
+    CURRENT_PROJECT_VERSION: "1"
+
+targets:
+  AttestKitDemo:
+    type: application
+    platform: iOS
+    sources:
+      - AttestKitDemo
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.unconfirmedlabs.attestkitdemo
+        CODE_SIGN_ENTITLEMENTS: AttestKitDemo/AttestKitDemo.entitlements
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: "NO"
+        SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: "NO"
+    info:
+      path: AttestKitDemo/Info.plist
+      properties:
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UIRequiredDeviceCapabilities:
+          - arm64
