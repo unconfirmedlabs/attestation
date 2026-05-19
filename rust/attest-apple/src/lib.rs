@@ -16,12 +16,15 @@
 //! authoritative verification algorithm:
 //! <https://developer.apple.com/documentation/devicecheck/validating-apps-that-connect-to-your-server>
 
+pub mod assertion;
 pub mod authdata;
 pub mod cbor;
 pub mod cose;
 mod errors;
 pub mod oids;
 pub mod roots;
+
+pub use assertion::verify_assertion;
 
 pub use attestation_core::{sources, Outcome};
 pub use errors::{Error, Result};

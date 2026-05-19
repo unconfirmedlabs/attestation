@@ -62,6 +62,7 @@ impl Outcome {
 /// and what each consuming Move package compares against.
 pub mod sources {
     pub const APPLE_APP_ATTEST: &str = "apple-app-attest";
+    pub const APPLE_APP_ATTEST_ASSERTION: &str = "apple-app-attest-assertion";
     pub const APPLE_WEBAUTHN: &str = "apple-webauthn";
     pub const ANDROID_KEY_ATTEST: &str = "android-key-attest";
     pub const ANDROID_WEBAUTHN_KEY: &str = "android-webauthn-key";

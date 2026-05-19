@@ -1,22 +1,33 @@
-/// Apple App Attest verification — Nitro-attested per request.
+/// Apple App **attestation** verification.
 ///
-/// Each call carries a fresh AWS Nitro attestation document. The on-chain
-/// verifier:
+/// An *attestation* (Apple's `attestationObject`, produced once per app
+/// install via `DCAppAttestService.attestKey(...)`) proves that a P-256
+/// public key was generated inside genuine Apple Secure Enclave hardware
+/// on the calling app — anchored in Apple's PKI all the way to the
+/// pinned Apple App Attestation Root CA.
+///
+/// Pair this module with [`attest_apple::assertion`] for per-action
+/// signatures by the same SE-bound key. The convention:
+///
+/// * **attestation** — one-time, "this key is real Apple SE hardware."
+/// * **assertion**   — per-payload, "this key signed this exact bytes."
+///
+/// Each `verify` call carries a fresh AWS Nitro attestation document
+/// produced by the pinned enclave image. The on-chain verifier:
 ///
 ///   1. Loads + verifies the Nitro attestation doc (AWS root → COSE_Sign1).
 ///   2. Confirms the doc's PCRs match the policy — i.e., it's our pinned
 ///      enclave image, not some attacker's image.
 ///   3. Confirms the doc's `user_data` equals `sha256(BCS(ApplePayload))` —
-///      this binds the doc to a specific payload, so old docs can't be
-///      paired with new payloads.
+///      binds the doc to a specific payload.
 ///   4. Confirms the Nitro-signed `timestamp` is fresh against `sui::clock`
-///      — unspoofable, because the timestamp is signed by AWS Nitro, not
-///      by the parent EC2 host.
+///      — unspoofable, signed by AWS Nitro, not by the parent EC2 host.
 ///
-/// The actual Apple chain validation happens off-chain inside the pinned
-/// enclave image (`rust/attest-apple`). The PCR check proves the verifier
-/// code is what we built; the on-chain Nitro check proves the result.
-module attest_apple::attest;
+/// The actual Apple X.509 chain validation happens off-chain inside the
+/// pinned enclave image (`rust/attest-apple`). The PCR check proves the
+/// verifier code is what we built; the on-chain Nitro check proves the
+/// result.
+module attest_apple::attestation;
 
 use std::bcs;
 use std::hash;
@@ -26,6 +37,7 @@ use sui::nitro_attestation::{Self, NitroAttestationDocument, PCREntry};
 use attestation::attestation::ATTESTATION;
 use attestation::witness::{Self, Witness};
 use attest_apple::source::{Self, AppleAppAttest};
+// (constructor used below: source::new_app_attest)
 use kagi::enclave_policy::{Self, EnclavePolicy};
 
 // === Errors ===
@@ -101,7 +113,7 @@ public fun verify(
 
     // 5. Emit the typed witness with the Nitro timestamp.
     witness::new(
-        source::new(),
+        source::new_app_attest(),
         payload.attested_value,
         payload.challenge,
         nsm_ts,

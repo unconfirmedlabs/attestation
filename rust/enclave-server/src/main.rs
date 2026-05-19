@@ -76,7 +76,10 @@ async fn main() -> Result<()> {
     let app = Router::new()
         .route("/health", get(health))
         .route("/attestation", get(attestation_doc))
-        .route("/attest/apple", post(attest_apple))
+        .route("/attest/apple/attestation", post(attest_apple_attestation))
+        // Backward-compatible alias for the original endpoint path.
+        .route("/attest/apple", post(attest_apple_attestation))
+        .route("/attest/apple/assertion", post(attest_apple_assertion))
         .with_state(state);
 
     let bind = std::env::var("ENCLAVE_BIND").unwrap_or_else(|_| "127.0.0.1:3000".into());
@@ -262,7 +265,7 @@ impl IntoResponse for AttestError {
     }
 }
 
-async fn attest_apple(
+async fn attest_apple_attestation(
     State(state): State<AppState>,
     Json(req): Json<AppleRequest>,
 ) -> Result<Json<AttestResponse>, AttestError> {
@@ -347,4 +350,84 @@ fn request_nsm_attestation(
     _user_data: Vec<u8>,
 ) -> Result<Vec<u8>, AttestError> {
     Err(AttestError::NsmInit)
+}
+
+// ---------- /attest/apple/assertion ----------
+
+/// Mirror of Move's `attest_apple::assertion::AssertionPayload`. Field
+/// order is significant — must BCS-encode identically to the Move struct.
+#[derive(serde::Serialize)]
+struct AssertionPayload {
+    attested_key: Vec<u8>,
+    client_data: Vec<u8>,
+}
+
+#[derive(Deserialize)]
+struct AppleAssertionRequest {
+    /// CBOR bytes returned by `DCAppAttestService.generateAssertion`.
+    assertion_object_hex: String,
+    /// The exact bytes the SE key signed (the iOS app hashed these with
+    /// SHA-256 and passed as `clientDataHash`).
+    client_data_hex: String,
+    /// The previously-attested SE public key (P-256 X9.63 uncompressed,
+    /// 65 B). The caller is responsible for ensuring this pk was attested
+    /// via a prior `attest_apple::attestation::verify` call.
+    attested_key_hex: String,
+    /// `"<teamID>.<bundleID>"` of the app — same value passed at
+    /// attestation time. The assertion's `rpIdHash` must equal
+    /// `SHA-256(app_id)`.
+    app_id: String,
+}
+
+#[derive(Serialize)]
+struct AssertionResponse {
+    nsm_doc_hex: String,
+    attested_key_hex: String,
+    client_data_hex: String,
+    public_key_hex: String,
+}
+
+async fn attest_apple_assertion(
+    State(state): State<AppState>,
+    Json(req): Json<AppleAssertionRequest>,
+) -> Result<Json<AssertionResponse>, AttestError> {
+    let assertion_object = hex::decode(&req.assertion_object_hex)
+        .map_err(|e| AttestError::InvalidHex("assertion_object_hex", e))?;
+    let client_data = hex::decode(&req.client_data_hex)
+        .map_err(|e| AttestError::InvalidHex("client_data_hex", e))?;
+    let attested_key = hex::decode(&req.attested_key_hex)
+        .map_err(|e| AttestError::InvalidHex("attested_key_hex", e))?;
+
+    let stamp_ms: u64 = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+
+    // Run the off-chain assertion verifier (CBOR + ECDSA verify against pk).
+    let outcome: Outcome = attest_apple::verify_assertion(
+        &assertion_object,
+        &client_data,
+        &attested_key,
+        &req.app_id,
+        stamp_ms,
+    )?;
+
+    // Bind a fresh NSM doc to the (attested_key, client_data) pair.
+    let payload = AssertionPayload {
+        attested_key: outcome.attested_value.clone(),
+        client_data: outcome.challenge.clone(),
+    };
+    let payload_bcs = bcs::to_bytes(&payload)?;
+    let payload_hash: [u8; 32] = Sha256::digest(&payload_bcs).into();
+    let nsm_doc = request_nsm_attestation(
+        state.verifying_key.to_bytes().to_vec(),
+        payload_hash.to_vec(),
+    )?;
+
+    Ok(Json(AssertionResponse {
+        nsm_doc_hex: hex::encode(&nsm_doc),
+        attested_key_hex: hex::encode(&outcome.attested_value),
+        client_data_hex: hex::encode(&outcome.challenge),
+        public_key_hex: hex::encode(state.verifying_key.to_bytes()),
+    }))
 }
