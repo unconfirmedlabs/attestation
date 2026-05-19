@@ -2,192 +2,417 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var vm = AttestViewModel()
+    @State private var infoSheetVisible = false
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    header
-                    appInfo
-                    activeKeyBox
-                    actionRow
-                    if let error = vm.errorMessage {
-                        errorView(error)
+            VStack(spacing: 0) {
+                ScrollView {
+                    VStack(spacing: 16) {
+                        intro
+                        environmentCard
+                        activeKeyCard
+                        if let err = vm.errorMessage { errorBanner(err) }
+                        if let cap = vm.lastAttestation { attestationCard(cap) }
+                        if let cap = vm.lastAssertion { assertionCard(cap) }
+                        Spacer(minLength: 16)
                     }
-                    if let capture = vm.lastAttestation {
-                        attestationResult(capture)
-                    }
-                    if let capture = vm.lastAssertion {
-                        assertionResult(capture)
-                    }
-                    Spacer(minLength: 24)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 4)
+                    .padding(.bottom, 12)
                 }
-                .padding()
+                actionStack
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                    .padding(.bottom, 8)
+                    .background(.bar)
             }
+            .background(Color(.systemGroupedBackground))
             .navigationTitle("App Attest")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        infoSheetVisible = true
+                    } label: {
+                        Image(systemName: "info.circle")
+                    }
+                }
+            }
+            .sheet(isPresented: $infoSheetVisible) { InfoSheet() }
         }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("attest-apple fixture capture")
-                .font(.headline)
-            Text("Drive both Apple App Attest paths — attestation (one-time hardware proof) and assertion (per-payload signature) — and write fixtures the host can pull and verify on-chain.")
+    // MARK: - Sections
+
+    private var intro: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Fixture capture")
+                .font(.title3.weight(.semibold))
+            Text("Drive both Apple App Attest verbs from your iPhone's Secure Enclave. Captures land in the app sandbox; the host pulls them via `xcrun devicectl`.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 4)
     }
 
-    private var appInfo: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            row("Bundle ID", vm.bundleId ?? "n/a")
-            row("App Attest environment", vm.isProduction ? "production" : "development")
-            row("App Attest supported", vm.isSupported ? "yes" : "no — run on a real device")
+    private var environmentCard: some View {
+        Card(title: "Environment", icon: "iphone.gen3", accent: .secondary) {
+            VStack(spacing: 8) {
+                LabeledRow("Bundle ID", vm.bundleId ?? "n/a", mono: true)
+                LabeledRow("Environment", vm.isProduction ? "production" : "development")
+                LabeledRow(
+                    "App Attest",
+                    vm.isSupported ? "supported" : "unsupported — run on a real device",
+                    accent: vm.isSupported ? .green : .red,
+                )
+            }
         }
-        .font(.callout)
-        .padding(12)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
 
     @ViewBuilder
-    private var activeKeyBox: some View {
+    private var activeKeyCard: some View {
         if let active = vm.activeKey {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text("Active SE key").font(.headline)
-                    Spacer()
+            Card(title: "Active SE key", icon: "key.fill", accent: .green) {
+                VStack(spacing: 8) {
+                    StatusPill(text: "Bound", systemImage: "checkmark.seal.fill", tint: .green)
+                    LabeledRow("attested_key", "\(prefix(active.attestedKeyHex, 24))…\(suffix(active.attestedKeyHex, 8))", mono: true)
+                    LabeledRow("key_id (base64)", "\(prefix(active.keyId, 20))…", mono: true)
+                    LabeledRow("app_id", active.appId, mono: true)
                     Button(role: .destructive) { vm.clearActiveKey() } label: {
-                        Label("Forget", systemImage: "trash")
+                        Label("Forget this key", systemImage: "trash")
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 4)
                 }
-                row("attested_key (X9.63 hex)", String(active.attestedKeyHex.prefix(32)) + "…")
-                row("keyId (base64)", String(active.keyId.prefix(20)) + "…")
-                row("app_id", active.appId)
             }
-            .padding(12)
-            .background(.green.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
         } else {
-            Text("No active key. Tap **Attest new key** to bind one.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+            Card(title: "Active SE key", icon: "key.slash", accent: .secondary) {
+                VStack(spacing: 6) {
+                    StatusPill(text: "No active key", systemImage: "circle.dashed", tint: .secondary)
+                    Text("Tap **Attest new key** to generate a hardware-bound P-256 key and capture its Apple attestation.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
         }
     }
 
-    private var actionRow: some View {
-        HStack(spacing: 12) {
+    private var actionStack: some View {
+        VStack(spacing: 10) {
             Button {
                 Task { await vm.attest() }
             } label: {
-                if vm.isAttesting {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Label("Attest new key", systemImage: "key.viewfinder")
-                        .fontWeight(.semibold)
+                ZStack {
+                    if vm.isAttesting {
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                            .tint(.white)
+                    } else {
+                        Text("Attest New Key")
+                            .fontWeight(.semibold)
+                    }
                 }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(vm.isSupported ? Color.accentColor : Color.gray, in: RoundedRectangle(cornerRadius: 14))
+                .foregroundStyle(.white)
             }
-            .buttonStyle(.borderedProminent)
             .disabled(!vm.isSupported || vm.isAttesting)
+            .buttonStyle(.plain)
 
             Button {
                 Task { await vm.assert() }
             } label: {
-                if vm.isAsserting {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Label("Generate assertion", systemImage: "signature")
-                        .fontWeight(.semibold)
+                ZStack {
+                    if vm.isAsserting {
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                            .tint(.white)
+                    } else {
+                        Text("Generate Assertion")
+                            .fontWeight(.semibold)
+                    }
                 }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(
+                    (vm.isSupported && vm.activeKey != nil) ? Color.accentColor : Color.gray,
+                    in: RoundedRectangle(cornerRadius: 14),
+                )
+                .foregroundStyle(.white)
             }
-            .buttonStyle(.bordered)
             .disabled(!vm.isSupported || vm.isAsserting || vm.activeKey == nil)
+            .buttonStyle(.plain)
+        }
+    }
 
+    private func errorBanner(_ text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.red)
+                .imageScale(.large)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Error")
+                    .font(.subheadline.weight(.semibold))
+                Text(text)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Spacer()
         }
+        .padding(12)
+        .background(.red.opacity(0.10), in: RoundedRectangle(cornerRadius: 12))
     }
 
-    private func errorView(_ text: String) -> some View {
-        Text(text)
-            .font(.callout.monospaced())
-            .foregroundStyle(.red)
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
-    }
-
-    private func attestationResult(_ c: AttestationCapture) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Captured attestation").font(.headline)
-
-            field("attested_value (hex)", c.attestedPublicKey.hex)
-            field("key_id (hex)", c.keyIdBytes.hex)
-            field("challenge (hex)", c.challenge.hex)
-            field("attestation_object (hex, truncated)",
-                  "\(c.attestationObject.hex.prefix(120))…")
-            field("app_id", c.appId)
-            field("production", String(c.production))
-            if let name = vm.savedAttestationFile {
-                field("saved to sandbox", "Documents/\(name)")
+    private func attestationCard(_ c: AttestationCapture) -> some View {
+        ResultCard(
+            title: "Attestation captured",
+            subtitle: "One-time hardware proof from Apple's PKI",
+            icon: "checkmark.seal.fill",
+            accent: .green,
+            file: vm.savedAttestationFile,
+            copyAction: { UIPasteboard.general.string = vm.attestationFixtureJSON(c) },
+        ) {
+            VStack(spacing: 6) {
+                LabeledRow("attested_value", short(c.attestedPublicKey.hex), mono: true)
+                LabeledRow("key_id", short(c.keyIdBytes.hex), mono: true)
+                LabeledRow("challenge", short(c.challenge.hex), mono: true)
+                LabeledRow("app_id", c.appId, mono: true)
+                LabeledRow("production", String(c.production))
             }
-
-            Button {
-                UIPasteboard.general.string = vm.attestationFixtureJSON(c)
-            } label: {
-                Label("Copy attestation fixture", systemImage: "doc.on.doc")
-                    .fontWeight(.semibold)
+            DisclosureGroup("Raw attestationObject (\(c.attestationObject.count) bytes)") {
+                Text(c.attestationObject.hex)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .padding(.top, 6)
             }
-            .buttonStyle(.bordered)
+            .font(.caption.weight(.medium))
             .padding(.top, 4)
         }
-        .padding(12)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
 
-    private func assertionResult(_ c: AssertionCapture) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Captured assertion").font(.headline)
-
-            field("assertion_object (hex, truncated)",
-                  "\(c.assertionObject.hex.prefix(120))…")
-            field("client_data (hex)", c.clientData.hex)
-            field("attested_key (hex)", c.attestedPublicKey.hex)
-            field("app_id", c.appId)
-            if let name = vm.savedAssertionFile {
-                field("saved to sandbox", "Documents/\(name)")
+    private func assertionCard(_ c: AssertionCapture) -> some View {
+        ResultCard(
+            title: "Assertion captured",
+            subtitle: "Per-payload signature by the active SE key",
+            icon: "signature",
+            accent: .blue,
+            file: vm.savedAssertionFile,
+            copyAction: { UIPasteboard.general.string = vm.assertionFixtureJSON(c) },
+        ) {
+            VStack(spacing: 6) {
+                LabeledRow("attested_key", short(c.attestedPublicKey.hex), mono: true)
+                LabeledRow("client_data", short(c.clientData.hex), mono: true)
+                LabeledRow("app_id", c.appId, mono: true)
             }
-
-            Button {
-                UIPasteboard.general.string = vm.assertionFixtureJSON(c)
-            } label: {
-                Label("Copy assertion fixture", systemImage: "doc.on.doc")
-                    .fontWeight(.semibold)
+            DisclosureGroup("client_data (\(c.clientData.count) bytes)") {
+                Text(String(data: c.clientData, encoding: .utf8) ?? c.clientData.hex)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .padding(.top, 6)
             }
-            .buttonStyle(.bordered)
-            .padding(.top, 4)
+            .font(.caption.weight(.medium))
+            DisclosureGroup("Raw assertion (\(c.assertionObject.count) bytes)") {
+                Text(c.assertionObject.hex)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .padding(.top, 6)
+            }
+            .font(.caption.weight(.medium))
+            .padding(.top, 2)
         }
-        .padding(12)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
 
-    private func row(_ label: String, _ value: String) -> some View {
+    // MARK: - Helpers
+
+    private func short(_ s: String, head: Int = 12, tail: Int = 8) -> String {
+        if s.count <= head + tail + 1 { return s }
+        return "\(prefix(s, head))…\(suffix(s, tail))"
+    }
+
+    private func prefix(_ s: String, _ n: Int) -> String { String(s.prefix(n)) }
+    private func suffix(_ s: String, _ n: Int) -> String { String(s.suffix(n)) }
+}
+
+// MARK: - Reusable views
+
+private struct Card<Content: View>: View {
+    let title: String
+    let icon: String
+    let accent: Color
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .foregroundStyle(accent)
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+            }
+            content()
+        }
+        .padding(14)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+    }
+}
+
+private struct ResultCard<Content: View>: View {
+    let title: String
+    let subtitle: String
+    let icon: String
+    let accent: Color
+    let file: String?
+    let copyAction: () -> Void
+    @ViewBuilder var content: () -> Content
+
+    @State private var copied = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: icon)
+                    .foregroundStyle(accent)
+                    .imageScale(.large)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.subheadline.weight(.semibold))
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            content()
+            if let file {
+                Label("Saved to Documents/\(file)", systemImage: "doc.text")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Button {
+                copyAction()
+                copied = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
+            } label: {
+                HStack {
+                    Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                    Text(copied ? "Copied" : "Copy fixture JSON")
+                        .fontWeight(.medium)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(.tertiary.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(14)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+    }
+}
+
+private struct LabeledRow: View {
+    let label: String
+    let value: String
+    var mono: Bool = false
+    var accent: Color? = nil
+
+    init(_ label: String, _ value: String, mono: Bool = false, accent: Color? = nil) {
+        self.label = label
+        self.value = value
+        self.mono = mono
+        self.accent = accent
+    }
+
+    var body: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text(label).foregroundStyle(.secondary)
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
             Spacer()
-            Text(value).fontDesign(.monospaced).multilineTextAlignment(.trailing)
-        }
-    }
-
-    private func field(_ label: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.caption).foregroundStyle(.secondary)
-            Text(value).font(.caption.monospaced()).textSelection(.enabled)
+            Text(value)
+                .font(mono ? .caption.monospaced() : .caption)
+                .foregroundStyle(accent ?? .primary)
+                .multilineTextAlignment(.trailing)
+                .lineLimit(1)
         }
     }
 }
+
+private struct StatusPill: View {
+    let text: String
+    let systemImage: String
+    let tint: Color
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: systemImage)
+            Text(text).fontWeight(.medium)
+        }
+        .font(.caption)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .foregroundStyle(tint)
+        .background(tint.opacity(0.12), in: Capsule())
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct InfoSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    section(
+                        title: "What is App Attest?",
+                        body: "Apple's API for proving that a public key was generated inside the Secure Enclave on a real iOS device running your specific app.",
+                    )
+                    section(
+                        title: "Attestation",
+                        body: "One-time, per app install. Apple's PKI signs a chain that bottoms out at the Apple App Attestation Root CA. Use the captured fixture with `attest_apple::attestation::verify` on Sui.",
+                    )
+                    section(
+                        title: "Assertion",
+                        body: "Per-action. Once a key is attested, you can use `generateAssertion` repeatedly to sign arbitrary payloads. Use the captured fixture with `attest_apple::assertion::verify` on Sui.",
+                    )
+                    section(
+                        title: "Why this demo exists",
+                        body: "It's the cleanest way to capture real-device fixtures for the verifier crates. Every button generates real, on-chain-verifiable bytes — no mocks, no fakes.",
+                    )
+                }
+                .padding(20)
+            }
+            .navigationTitle("About")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func section(title: String, body: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.headline)
+            Text(body)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+// MARK: - View Model
 
 @MainActor
 final class AttestViewModel: ObservableObject {
@@ -210,7 +435,6 @@ final class AttestViewModel: ObservableObject {
         return (a.keyId, a.attestedKey.hex, a.appId)
     }
 
-    /// `app_id = "<TEAMID>.<BUNDLE_ID>"`.
     private let teamId: String = "5354N269JS"
 
     func attest() async {
@@ -232,6 +456,8 @@ final class AttestViewModel: ObservableObject {
         do {
             let cap = try await service.attest(challenge: challenge, appId: appId, production: isProduction)
             lastAttestation = cap
+            lastAssertion = nil
+            savedAssertionFile = nil
             errorMessage = nil
             savedAttestationFile = try saveAttestationFixture(cap)
         } catch {
@@ -243,9 +469,6 @@ final class AttestViewModel: ObservableObject {
         isAsserting = true
         defer { isAsserting = false }
 
-        // Sample client_data — for the demo, just a JSON blob with a fresh nonce.
-        // Consumers in production would substitute their own payload (e.g., a
-        // BCS-encoded ListenBatch summary).
         var nonce = Data(count: 16)
         _ = nonce.withUnsafeMutableBytes {
             SecRandomCopyBytes(kSecRandomDefault, 16, $0.baseAddress!)
@@ -270,7 +493,6 @@ final class AttestViewModel: ObservableObject {
         lastAssertion = nil
         savedAttestationFile = nil
         savedAssertionFile = nil
-        // SwiftUI refresh: nudge a published property
         objectWillChange.send()
     }
 
@@ -301,17 +523,11 @@ final class AttestViewModel: ObservableObject {
     // MARK: - Sandbox persistence
 
     private func saveAttestationFixture(_ c: AttestationCapture) throws -> String {
-        return try writeFixture(
-            prefix: "attestation",
-            json: attestationFixtureJSON(c),
-        )
+        try writeFixture(prefix: "attestation", json: attestationFixtureJSON(c))
     }
 
     private func saveAssertionFixture(_ c: AssertionCapture) throws -> String {
-        return try writeFixture(
-            prefix: "assertion",
-            json: assertionFixtureJSON(c),
-        )
+        try writeFixture(prefix: "assertion", json: assertionFixtureJSON(c))
     }
 
     private func writeFixture(prefix: String, json: String) throws -> String {
