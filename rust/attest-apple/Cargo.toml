@@ -1,0 +1,30 @@
+[package]
+name = "attest-apple"
+version = "0.1.0"
+description = "Verify Apple App Attest attestation objects, producing canonical outcomes for on-chain consumption."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+attestation-core = { path = "../attestation-core" }
+
+# Encoding
+ciborium = { workspace = true }
+x509-cert = { workspace = true }
+der = { workspace = true }
+const-oid = { workspace = true }
+spki = { workspace = true }
+
+# Crypto
+p256 = { workspace = true }
+sha2 = { workspace = true }
+
+# Errors
+thiserror = { workspace = true }
+
+[dev-dependencies]
+hex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

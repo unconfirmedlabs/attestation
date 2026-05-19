@@ -1,0 +1,10 @@
+[package]
+name = "attestation"
+edition = "2024"
+license = "Apache-2.0"
+authors = ["Unconfirmed Labs, Inc. (os@unconfirmed.com)"]
+
+[dependencies]
+
+[addresses]
+attestation = "0x0"

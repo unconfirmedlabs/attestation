@@ -18,18 +18,26 @@ This repo ships the wheel.
 
 | Move package | Status | What it attests |
 |---|---|---|
-| `attestation` | planned | Base `Witness<Source>` type, used by all source packages |
-| `attest_apple` | planned | Apple App Attest — iOS Secure Enclave-backed P-256 keys |
-| `attest_android` | planned | Android Key Attestation — StrongBox / TEE-backed keys |
-| `attest_webauthn` | planned | WebAuthn registration response — passkeys + security keys |
+| `attestation` | **v0 scaffolded** | Base `Witness<Source>` type, used by all source packages |
+| `attest_apple` | **v0 scaffolded** | Apple App Attest — iOS Secure Enclave-backed P-256 keys (also accepts WebAuthn `fmt: "apple"` later) |
+| `attest_android` | planned | Android Key Attestation — StrongBox / TEE-backed keys (also WebAuthn `fmt: "android-key"`) |
 | `attest_ntag` | planned | NXP NTAG 424 DNA originality signature — genuine NFC chips |
+| `attest_fido` | deferred | WebAuthn `fmt: "packed"` — security keys, self-attested authenticators |
 
 | Rust crate | Status | Purpose |
 |---|---|---|
-| `attest-apple` | planned | Parse and verify Apple App Attest CBOR + X.509 chain to Apple's root |
+| `attestation-core` | **v0** | Canonical `Outcome` struct with BCS serde — shared by every per-platform crate |
+| `attest-apple` | **v0 scaffolded** | Parse and verify Apple App Attest CBOR + X.509 chain to Apple's root |
 | `attest-android` | planned | Parse and verify Android Key Attestation cert extensions |
-| `attest-webauthn` | planned | Parse and verify WebAuthn registration attestation statements |
-| `attest-ntag` | planned | Verify NXP NTAG 424 originality signature |
+| `attest-ntag` | planned | Verify NXP NTAG 424 originality signature (P-224 ECDSA against NXP's root) |
+| `attest-fido` | deferred | Parse and verify WebAuthn packed attestation |
+
+**v0 scaffolded** means: code structure, types, public API, unit tests for what can be tested without real-device fixtures. The Apple verifier compiles and its per-module logic (CBOR parsing, authData parsing, COSE key extraction, nonce extension OID parsing, BCS round-trip for the outcome) is exercised by unit tests. End-to-end verification against a real attestation object needs:
+
+1. The Apple App Attestation Root CA bytes pinned into `rust/attest-apple/src/roots.rs`.
+2. A real device fixture in `rust/attest-apple/tests/fixtures/`.
+
+Both unblock together once the iOS demo app exists.
 
 ## Design at a glance
 
@@ -92,8 +100,9 @@ A standalone design doc will land here as `docs/architecture.md` once stabilized
 
 ## Status
 
-- 2026-05: repo bootstrapped. No package contents yet.
-- Initial sequence: Rust `attest-apple` crate (with test vectors) → Move `attestation` base + `attest_apple` wrapper → end-to-end test against a real iOS device.
+- **2026-05**: repo bootstrapped + Apple App Attest v0 scaffolded. Rust workspace (`attestation-core` + `attest-apple`) compiles cleanly with passing unit tests; Move packages (`attestation` base + `attest_apple` consumer) build cleanly with no warnings.
+- **Next**: tiny SwiftUI iOS demo app (`ios-demo/`) for capturing real device attestation objects; pin the Apple root CA; populate `rust/attest-apple/tests/fixtures/`; flip the integration test from `#[ignore]` to live.
+- **Then**: `attest_ntag` (chip + reader hardware on the way) and `attest_android` (waiting on a device).
 
 ## License
 
