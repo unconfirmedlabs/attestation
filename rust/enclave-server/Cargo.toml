@@ -36,5 +36,8 @@ bcs = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 
+# VSOCK (only used inside the Nitro Enclave, but unconditionally linked)
+tokio-vsock = "0.7"
+
 [dev-dependencies]
 reqwest = { version = "0.12", features = ["json"] }

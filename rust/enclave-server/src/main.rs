@@ -51,6 +51,15 @@ async fn main() -> Result<()> {
         )
         .init();
 
+    let in_enclave = std::path::Path::new("/dev/vsock").exists();
+    if in_enclave {
+        setup_loopback();
+        // Bridge VSOCK:3000 → TCP 127.0.0.1:3000 so axum can use its
+        // standard TCP listener. Bytes arriving from the host-side proxy
+        // come in over VSOCK; this task copies them onto local TCP.
+        tokio::spawn(vsock_to_tcp_bridge(3000, 3000));
+    }
+
     let signing_key = SigningKey::generate(&mut OsRng);
     let verifying_key = signing_key.verifying_key();
     info!(
@@ -75,6 +84,63 @@ async fn main() -> Result<()> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+/// Inside the Nitro enclave, bring up the loopback interface so axum can
+/// bind to 127.0.0.1. The enclave's root filesystem includes busybox,
+/// which provides the `ip` command.
+fn setup_loopback() {
+    use std::process::Command;
+    let _ = Command::new("busybox")
+        .args(["ip", "addr", "add", "127.0.0.1/8", "dev", "lo"])
+        .status();
+    let _ = Command::new("busybox")
+        .args(["ip", "link", "set", "dev", "lo", "up"])
+        .status();
+}
+
+/// Accept VSOCK connections on the given port and shuttle bytes to/from
+/// the local TCP port. Each connection runs in its own task. Bytes come
+/// in from the host's TCP↔VSOCK proxy; this re-emerges them as a local
+/// TCP connection that axum picks up via its standard listener.
+async fn vsock_to_tcp_bridge(vsock_port: u32, tcp_port: u16) {
+    use tokio_vsock::{VsockAddr, VsockListener, VMADDR_CID_ANY};
+
+    let addr = VsockAddr::new(VMADDR_CID_ANY, vsock_port);
+    let listener = match VsockListener::bind(addr) {
+        Ok(l) => l,
+        Err(e) => {
+            tracing::error!("VSOCK bind {vsock_port} failed: {e}");
+            return;
+        }
+    };
+    info!("VSOCK:{vsock_port} → TCP:127.0.0.1:{tcp_port} bridge listening");
+
+    let mut incoming = listener;
+    loop {
+        match incoming.accept().await {
+            Ok((mut vsock_stream, _)) => {
+                tokio::spawn(async move {
+                    match tokio::net::TcpStream::connect(("127.0.0.1", tcp_port)).await {
+                        Ok(mut tcp_stream) => {
+                            let _ = tokio::io::copy_bidirectional(
+                                &mut vsock_stream,
+                                &mut tcp_stream,
+                            )
+                            .await;
+                        }
+                        Err(e) => tracing::warn!(
+                            "TCP connect 127.0.0.1:{tcp_port} failed: {e}"
+                        ),
+                    }
+                });
+            }
+            Err(e) => tracing::warn!("VSOCK accept error: {e}"),
+        }
+        // Keep `incoming` borrowed; silence the unused-assignment lint by
+        // touching it explicitly. (Without this, `incoming` is moved.)
+        let _ = &mut incoming;
+    }
 }
 
 // ---------- /health ----------
