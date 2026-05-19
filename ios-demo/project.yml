@@ -19,6 +19,7 @@ settings:
     SWIFT_VERSION: "5.10"
     MARKETING_VERSION: "0.1"
     CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: "5354N269JS"
 
 targets:
   AttestKitDemo:

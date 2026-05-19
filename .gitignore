@@ -23,5 +23,14 @@ dist/
 *.swp
 *~
 
+# Xcode (project is generated from ios-demo/project.yml via xcodegen)
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+DerivedData/
+*.xcuserstate
+Pods/
+ios-demo/AttestKitDemo/Info.plist
+
 # Logs
 *.log

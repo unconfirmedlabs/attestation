@@ -132,7 +132,7 @@ final class AttestViewModel: ObservableObject {
     /// `app_id = "<TEAMID>.<BUNDLE_ID>"`. The team id is hardcoded here for
     /// dev convenience — update it (or read from a build setting) before
     /// running on a fresh signing identity.
-    private let teamId: String = "REPLACE_WITH_YOUR_TEAM_ID"
+    private let teamId: String = "5354N269JS"
 
     func attest() async {
         guard let bundleId else {
