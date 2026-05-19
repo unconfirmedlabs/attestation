@@ -24,22 +24,12 @@ const OID_ECDSA_SHA384: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840
 
 /// Apple App Attestation Root CA in DER form.
 ///
-/// TODO: populate with the actual DER-encoded bytes of Apple's root.
-/// Convert from the published PEM:
+/// Source: <https://www.apple.com/certificateauthority/Apple_App_Attestation_Root_CA.pem>
 ///
-/// ```sh
-/// curl -L -o root.pem \
-///   https://www.apple.com/certificateauthority/Apple_App_Attestation_Root_CA.pem
-/// openssl x509 -in root.pem -outform DER -out src/assets/apple_app_attest_root.der
-/// ```
-///
-/// Then replace this empty slice with:
-///
-/// ```ignore
-/// pub const APPLE_APP_ATTEST_ROOT_DER: &[u8] =
-///     include_bytes!("assets/apple_app_attest_root.der");
-/// ```
-pub const APPLE_APP_ATTEST_ROOT_DER: &[u8] = &[];
+/// Subject: CN=Apple App Attestation Root CA, O=Apple Inc., ST=California
+/// Self-signed, P-384 + SHA-384.
+pub const APPLE_APP_ATTEST_ROOT_DER: &[u8] =
+    include_bytes!("assets/apple_app_attest_root.der");
 
 /// Validate an x5c chain (leaf first, intermediate(s) after).
 ///
@@ -65,22 +55,12 @@ pub fn validate_x5c_chain(x5c: &[Vec<u8>]) -> Result<Certificate> {
         verify_signature(&certs[i], &certs[i + 1])?;
     }
 
-    // Root anchor.
-    if APPLE_APP_ATTEST_ROOT_DER.is_empty() {
-        // Without the pinned root we cannot complete the chain anchor check.
-        // The verifier still requires this in production; tests may proceed
-        // with placeholder.
-        eprintln!(
-            "[attest-apple] WARNING: APPLE_APP_ATTEST_ROOT_DER is empty; \
-             skipping root anchor verification. Set the root bytes before \
-             production use."
-        );
-    } else {
-        let root = Certificate::from_der(APPLE_APP_ATTEST_ROOT_DER)
-            .map_err(|e| Error::Der(format!("pinned root parse: {e}")))?;
-        let top = certs.last().expect("non-empty");
-        verify_signature(top, &root)?;
-    }
+    // Root anchor — the top of the supplied chain must be signed by the
+    // pinned Apple App Attestation Root CA.
+    let root = Certificate::from_der(APPLE_APP_ATTEST_ROOT_DER)
+        .map_err(|e| Error::Der(format!("pinned root parse: {e}")))?;
+    let top = certs.last().expect("non-empty");
+    verify_signature(top, &root)?;
 
     Ok(certs.into_iter().next().expect("non-empty"))
 }
