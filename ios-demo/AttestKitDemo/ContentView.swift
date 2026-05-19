@@ -83,6 +83,9 @@ struct ContentView: View {
                   "\(capture.attestationObject.hex.prefix(120))…")
             field("app_id", capture.appId)
             field("production", String(capture.production))
+            if let name = vm.savedFileName {
+                field("saved to sandbox", "Documents/\(name)")
+            }
 
             Button {
                 UIPasteboard.general.string = vm.fixtureJSON(capture)
@@ -118,6 +121,7 @@ final class AttestViewModel: ObservableObject {
     private let attest = AttestService()
 
     @Published var lastCapture: AttestationCapture?
+    @Published var savedFileName: String?
     @Published var errorMessage: String?
     @Published var isWorking = false
 
@@ -162,6 +166,7 @@ final class AttestViewModel: ObservableObject {
             )
             lastCapture = capture
             errorMessage = nil
+            savedFileName = try saveFixture(capture)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -177,6 +182,28 @@ final class AttestViewModel: ObservableObject {
           "production": \(c.production)
         }
         """
+    }
+
+    /// Save the fixture to the app's Documents directory. The host pulls it
+    /// via `xcrun devicectl device copy from --domain-type appDataContainer`.
+    /// Filename is auto-numbered so multiple captures coexist.
+    private func saveFixture(_ c: AttestationCapture) throws -> String {
+        let docs = try FileManager.default.url(
+            for: .documentDirectory, in: .userDomainMask,
+            appropriateFor: nil, create: true
+        )
+        let existing = (try? FileManager.default.contentsOfDirectory(atPath: docs.path)) ?? []
+        let nextIndex = existing
+            .compactMap { name -> Int? in
+                guard name.hasPrefix("dev_iphone_") && name.hasSuffix(".json") else { return nil }
+                return Int(name.dropFirst("dev_iphone_".count).dropLast(".json".count))
+            }
+            .max()
+            .map { $0 + 1 } ?? 1
+        let name = String(format: "dev_iphone_%03d.json", nextIndex)
+        let url = docs.appendingPathComponent(name)
+        try fixtureJSON(c).data(using: .utf8)!.write(to: url, options: .atomic)
+        return name
     }
 }
 
