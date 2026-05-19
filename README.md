@@ -4,15 +4,16 @@ Hardware-attestation primitives for Sui Move.
 
 A family of small, composable packages that verify a public key was generated inside genuine consumer hardware — Apple Secure Enclave, Android StrongBox, WebAuthn-attested authenticators, NXP NTAG 424 chips — and surface the result as a typed Move object with provable provenance.
 
-## Why
+## Overview
 
-On Sui today, validating standard hardware attestations on-chain is a months-long engineering task: X.509 chain validation across multiple curves, platform-specific CBOR/COSE parsing, root-key management, gas-priced ECDSA. Most projects skip it. The ones that don't reinvent the same wheel each time.
+Two layers:
 
-This repo ships the wheel.
+- **Rust verifier crates.** Parse and validate hardware-attestation blobs: CBOR/COSE decoding, X.509 chain validation across the curves each platform uses, signature checks against pinned roots. Usable as plain libraries outside the Move ecosystem.
+- **Move witness packages.** Accept a verifier outcome and emit a typed `Witness<Source>` consumable in any PTB. Each package pins its own platform root and defines its own `Source` marker.
 
-- Rust verifier crates for the heavy lifting (parsing, chain validation), reusable outside Move.
-- Thin Move "witness" packages that wrap an attestation outcome into a typed `Witness<Source>` consumable in any PTB.
-- Generic challenge-bound attestation — the packages do not bake in application semantics. The consumer supplies the challenge that ties the attestation to its domain.
+Verifiers run inside an AWS Nitro Enclave. The Move side accepts a verifier outcome only when it arrives inside a fresh Nitro attestation document whose PCRs match an on-chain `Policy` — so on-chain code re-checks the enclave image on every call.
+
+Packages don't bind to application semantics. The consumer supplies the challenge that ties an attestation to its domain.
 
 ## Package family
 
