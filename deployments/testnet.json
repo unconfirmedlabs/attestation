@@ -3,16 +3,29 @@
   "publisher": "0xd58a03041ee6c4d9708fc3cabc913d36aa6774e32910cecdbbd1aace6750be22",
   "packages": {
     "attestation": {
-      "packageId": "0x5428972a680e966a3ba4a74f4e3a42e33073b16bc4f7db56f04b4b719690790f",
-      "upgradeCap": "0xd9fbade82e4461dfe8f3912e35750a1be8098a778e2f6b3491a99aea6d3aebd3",
-      "publishedTx": "GH12vSLY1M64kjYkXWdTwPHifftx17HsyiLXm5RRBCH2"
-    },
-    "attest_apple": {
-      "packageId": "0x75991f659fc203d340701818760eb0f36a1b9e01a020e15ec7f19e91a760da23",
-      "upgradeCap": "0x98f9391a5e14e83c8fbede7928a139bc3861fc4f2017e7fc7d393f1269aac0ce",
-      "deps": {
-        "attestation": "0x5428972a680e966a3ba4a74f4e3a42e33073b16bc4f7db56f04b4b719690790f"
-      }
+      "packageId": "0x63c21a61d4021cebf4fdac6d1b1d1832e5e5c3da017736494f9c0d24c11bfd0e",
+      "upgradeCap": "0x4d210248233a01d7cb601de54d6b6c9692cb40cb9fc553776df96a62ecf13dbd"
     }
+  },
+  "kagi": {
+    "packageId": "0x68b0993136fdc5aa02275a3a0b51f93e9b7c3b601867ec4a8123a76503665161"
+  },
+  "policy": {
+    "id": "0x5ce7b5ccec53698cec0a8cf2a631805069f51dca9c8cded853a1e0680f38bc34",
+    "cap": "0x89b753ec74d7c668568453e2c3a931609a71af3003208a6a8a549645b12ce6fc",
+    "pcr0": "d466c213077eb3b017058c0f0671ffc13ef2aafabe7f91057305ce81cbac0388f7c1eb1cdb7bcff964d5ba0007e69e7c",
+    "pcr1": "d466c213077eb3b017058c0f0671ffc13ef2aafabe7f91057305ce81cbac0388f7c1eb1cdb7bcff964d5ba0007e69e7c",
+    "pcr2": "21b9efbc184807662e966d34f390821309eeac6802309798826296bf3e8bec7c10edb30948c90ba67310f7b964fc500a"
+  },
+  "enclave": {
+    "id": "0xdc340890046ff83efdc2202457b9405b304669b6c820666653d12fab332e3853",
+    "cap": "0xfebed6746b34f304fe3e86e1fbd6ebdf94a140929c8d0ab0aff752903cb2ff26",
+    "ed25519_public_key": "e70fa4ad7b2f274f5eaaea1d18b0fb860ebdc137921ff363ceb13f5c0434b1e2",
+    "registered_tx": "CE9DF8oTqoAoQgG5Gu2pfRxDHUXhG6kkH9QFvaUyGehZ"
+  },
+  "deprecated": {
+    "attest_apple_v0": "0x75991f659fc203d340701818760eb0f36a1b9e01a020e15ec7f19e91a760da23",
+    "attestation_v0": "0x5428972a680e966a3ba4a74f4e3a42e33073b16bc4f7db56f04b4b719690790f",
+    "note": "Replaced by the kagi-integrated `attestation` package (no longer takes raw verifier_pk; downstream packages will be republished to consume Enclave<ATTESTATION>)."
   }
 }

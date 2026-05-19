@@ -39,5 +39,9 @@ thiserror = { workspace = true }
 # VSOCK (only used inside the Nitro Enclave, but unconditionally linked)
 tokio-vsock = "0.7"
 
+# Nitro NSM (Linux-only; provides /dev/nsm attestation)
+[target.'cfg(target_os = "linux")'.dependencies]
+aws-nitro-enclaves-nsm-api = "0.4"
+
 [dev-dependencies]
 reqwest = { version = "0.12", features = ["json"] }

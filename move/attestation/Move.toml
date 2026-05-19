@@ -5,3 +5,4 @@ license = "Apache-2.0"
 authors = ["Unconfirmed Labs, Inc. (os@unconfirmed.com)"]
 
 [dependencies]
+kagi = { git = "https://github.com/unconfirmedlabs/kagi.git", subdir = "move", rev = "main" }

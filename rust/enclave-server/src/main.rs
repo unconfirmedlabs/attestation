@@ -74,6 +74,7 @@ async fn main() -> Result<()> {
 
     let app = Router::new()
         .route("/health", get(health))
+        .route("/attestation", get(attestation_doc))
         .route("/attest/apple", post(attest_apple))
         .with_state(state);
 
@@ -158,6 +159,67 @@ async fn health(State(state): State<AppState>) -> Json<Health> {
         version: env!("CARGO_PKG_VERSION"),
         sources: &[attestation_core::sources::APPLE_APP_ATTEST],
     })
+}
+
+// ---------- /attestation ----------
+
+#[derive(Serialize)]
+struct AttestationDoc {
+    /// Hex-encoded CBOR (COSE_Sign1) NSM attestation document. Submit on-chain
+    /// via `0x2::nitro_attestation::load_nitro_attestation` then pass to
+    /// `kagi::enclave::new` to register this enclave under a policy.
+    document_hex: String,
+}
+
+#[cfg(target_os = "linux")]
+async fn attestation_doc(
+    State(state): State<AppState>,
+) -> Result<Json<AttestationDoc>, (StatusCode, Json<serde_json::Value>)> {
+    use aws_nitro_enclaves_nsm_api::api::{Request, Response};
+    use aws_nitro_enclaves_nsm_api::driver::{nsm_init, nsm_process_request};
+
+    let fd = nsm_init();
+    if fd < 0 {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({
+                "error": "nsm_init failed (not running inside a Nitro Enclave?)"
+            })),
+        ));
+    }
+
+    let pk_bytes = state.verifying_key.to_bytes().to_vec();
+
+    let request = Request::Attestation {
+        public_key: Some(pk_bytes.into()),
+        user_data: None,
+        nonce: None,
+    };
+    let response = nsm_process_request(fd, request);
+
+    match response {
+        Response::Attestation { document } => Ok(Json(AttestationDoc {
+            document_hex: hex::encode(document),
+        })),
+        other => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "error": format!("unexpected NSM response: {:?}", other)
+            })),
+        )),
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+async fn attestation_doc(
+    State(_state): State<AppState>,
+) -> Result<Json<AttestationDoc>, (StatusCode, Json<serde_json::Value>)> {
+    Err((
+        StatusCode::NOT_IMPLEMENTED,
+        Json(serde_json::json!({
+            "error": "/attestation is only available on Linux (Nitro Enclave host)"
+        })),
+    ))
 }
 
 // ---------- /attest/apple ----------
