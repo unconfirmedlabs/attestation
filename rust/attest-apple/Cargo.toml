@@ -12,7 +12,7 @@ attestation-core = { path = "../attestation-core" }
 
 # Encoding
 ciborium = { workspace = true }
-x509-cert = { workspace = true }
+x509-cert = { workspace = true, features = ["pem"] }
 der = { workspace = true }
 const-oid = { workspace = true }
 spki = { workspace = true }

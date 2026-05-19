@@ -25,6 +25,7 @@ tracing-subscriber = { workspace = true }
 # Crypto
 ed25519-dalek = { workspace = true }
 rand = { workspace = true }
+sha2 = { workspace = true }
 
 # Encoding
 serde = { workspace = true }
@@ -45,3 +46,5 @@ aws-nitro-enclaves-nsm-api = "0.4"
 
 [dev-dependencies]
 reqwest = { version = "0.12", features = ["json"] }
+serde_json = { workspace = true }
+sha2 = { workspace = true }

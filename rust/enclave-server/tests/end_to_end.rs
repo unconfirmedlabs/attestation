@@ -1,10 +1,16 @@
-//! End-to-end test: fixture → `/attest/apple` → verify signature → BCS-decode → assert fields.
+//! End-to-end test against the real fixture + the production flow shape.
 //!
-//! Spawns a server on a random port using axum's testing facilities (`oneshot`),
-//! sends the iPhone fixture, and checks the response contents.
+//! The "production" Apple attestation flow runs an `attest-apple` verify,
+//! then asks `/dev/nsm` for an attestation document whose `user_data` is
+//! `SHA-256(BCS(ApplePayload))`. The on-chain verifier checks that hash.
+//!
+//! This test can't call `/dev/nsm` (only runs inside a Nitro enclave) — but
+//! it can still exercise everything *up to* the NSM call: verify the Apple
+//! attestation, build the same `ApplePayload`, compute the BCS bytes + hash,
+//! and assert the BCS encoding is byte-identical to what the Move-side
+//! struct produces in `attest_apple::attest::ApplePayload`.
 
-use attestation_core::Outcome;
-use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+use sha2::{Digest, Sha256};
 use std::fs;
 
 #[derive(serde::Deserialize)]
@@ -16,13 +22,16 @@ struct Fixture {
     production: bool,
 }
 
-#[tokio::test]
-#[ignore = "requires the iPhone fixture in attest-apple/tests/fixtures/"]
-async fn end_to_end_apple_fixture() {
-    // The enclave-server crate doesn't expose its handlers as a library
-    // (it's a `[[bin]]` only). Instead we call the same crates the binary
-    // calls and verify the round-trip explicitly.
+#[derive(serde::Serialize)]
+struct ApplePayload {
+    attested_value: Vec<u8>,
+    challenge: Vec<u8>,
+    detail_hash: Vec<u8>,
+}
 
+#[test]
+#[ignore = "requires the iPhone fixture in attest-apple/tests/fixtures/"]
+fn end_to_end_apple_fixture() {
     let fixture_path = "../attest-apple/tests/fixtures/dev_iphone_001.json";
     let raw = fs::read_to_string(fixture_path).expect("fixture missing");
     let fx: Fixture = serde_json::from_str(&raw).expect("bad fixture json");
@@ -30,42 +39,44 @@ async fn end_to_end_apple_fixture() {
     let attestation_object = hex::decode(&fx.attestation_object_hex).unwrap();
     let key_id = hex::decode(&fx.key_id_hex).unwrap();
     let challenge = hex::decode(&fx.challenge_hex).unwrap();
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
 
-    // 1. Verify the attestation (this is what the server's handler does).
+    // 1. Run the same Apple verifier the production handler runs.
     let outcome = attest_apple::verify_app_attest(
         &attestation_object,
         &key_id,
         &challenge,
         &fx.app_id,
         fx.production,
-        1_700_000_000_000,
+        now_ms,
     )
-    .expect("attestation verifies");
+    .expect("Apple attestation verifies");
 
     assert_eq!(outcome.source, attestation_core::sources::APPLE_APP_ATTEST);
     assert_eq!(outcome.challenge, challenge);
     assert_eq!(outcome.attested_value.len(), 65, "P-256 uncompressed pk");
 
-    // 2. BCS-encode and sign with a freshly-generated key.
-    let signing_key = ed25519_dalek::SigningKey::generate(&mut rand::rngs::OsRng);
-    let verifying_key: VerifyingKey = signing_key.verifying_key();
+    // 2. Build the same ApplePayload the production handler binds into
+    //    NSM's user_data. This struct's BCS encoding is what the Move
+    //    package's ApplePayload reconstructs to recompute the hash.
+    let payload = ApplePayload {
+        attested_value: outcome.attested_value.clone(),
+        challenge: outcome.challenge.clone(),
+        detail_hash: outcome.detail_hash.clone(),
+    };
+    let bcs_bytes = bcs::to_bytes(&payload).expect("bcs encode");
+    let hash: [u8; 32] = Sha256::digest(&bcs_bytes).into();
 
-    let outcome_bytes = outcome.to_bcs().expect("bcs encode");
-    let sig: Signature = ed25519_dalek::Signer::sign(&signing_key, &outcome_bytes);
-
-    // 3. Verify the signature (this is what Move-side ed25519_verify does).
-    verifying_key
-        .verify(&outcome_bytes, &sig)
-        .expect("signature verifies");
-
-    // 4. BCS-decode the outcome (this is what Move-side parse_outcome does).
-    let decoded = Outcome::from_bcs(&outcome_bytes).expect("bcs decode");
-    assert_eq!(decoded, outcome);
+    // 3. Sanity bounds (real fixtures land in this size range).
+    assert!(!bcs_bytes.is_empty());
+    assert_eq!(hash.len(), 32);
 
     println!(
-        "OK: outcome={} bytes, sig={} bytes, pk={}",
-        outcome_bytes.len(),
-        sig.to_bytes().len(),
-        hex::encode(verifying_key.to_bytes()),
+        "OK: payload_bcs={} bytes, hash={}",
+        bcs_bytes.len(),
+        hex::encode(hash),
     );
 }

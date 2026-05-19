@@ -38,13 +38,17 @@ fn fixture_dev_iphone_001() {
     let Some(f) = load_fixture("dev_iphone_001") else {
         panic!("place dev_iphone_001.json in tests/fixtures/ first");
     };
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
     let result = verify_app_attest(
         &hex::decode(&f.attestation_object_hex).unwrap(),
         &hex::decode(&f.key_id_hex).unwrap(),
         &hex::decode(&f.challenge_hex).unwrap(),
         &f.app_id,
         f.production,
-        1_700_000_000_000,
+        now_ms,
     );
     assert!(result.is_ok(), "{:?}", result);
 }

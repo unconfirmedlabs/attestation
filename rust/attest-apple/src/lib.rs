@@ -73,8 +73,9 @@ pub fn verify_app_attest(
     // 2. Parse authData.
     let auth = authdata::parse(&stmt.auth_data)?;
 
-    // 3. Validate the x5c chain (will warn but pass if root is not yet pinned).
-    let leaf = roots::validate_x5c_chain(&stmt.x5c)?;
+    // 3. Validate the x5c chain back to the pinned Apple App Attestation Root CA.
+    //    Includes signature, validity-period, and BasicConstraints checks.
+    let leaf = roots::validate_x5c_chain(&stmt.x5c, clock_ms)?;
 
     // 4. Compute the expected nonce and compare to the cert extension.
     let mut hasher = Sha256::new();

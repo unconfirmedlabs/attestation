@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  rust:
+    name: cargo test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+        continue-on-error: true   # fmt drift is informational, not blocking
+      - run: cargo build --workspace --locked
+      - run: cargo test --workspace --locked
+
+  move:
+    name: sui move build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Sui CLI
+        run: |
+          curl -L https://github.com/MystenLabs/sui/releases/latest/download/sui-mainnet-v1.50.1-ubuntu-x86_64.tgz \
+            -o sui.tgz || \
+          curl -L https://github.com/MystenLabs/sui/releases/download/mainnet-v1.50.1/sui-mainnet-v1.50.1-ubuntu-x86_64.tgz \
+            -o sui.tgz
+          tar -xzf sui.tgz
+          sudo mv sui /usr/local/bin/
+          sui --version
+      - name: Build attestation
+        run: sui move build --path move/attestation
+      - name: Build attest_apple
+        run: sui move build --path move/attest_apple

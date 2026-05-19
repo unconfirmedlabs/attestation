@@ -7,7 +7,7 @@
       "upgradeCap": "0x4d210248233a01d7cb601de54d6b6c9692cb40cb9fc553776df96a62ecf13dbd"
     },
     "attest_apple": {
-      "packageId": "0xcce3584c3606ba48e230c0d19534600c24c4614ae135364e277470654dc16b71"
+      "packageId": "0xa7f01f0e58f9a4b7f6893c4e1a1008b981231f5c5b277d254c7059a88ea1b097"
     }
   },
   "kagi": {
@@ -16,14 +16,10 @@
   "policy": {
     "id": "0x5ce7b5ccec53698cec0a8cf2a631805069f51dca9c8cded853a1e0680f38bc34",
     "cap": "0x89b753ec74d7c668568453e2c3a931609a71af3003208a6a8a549645b12ce6fc",
-    "pcr0": "a9c7c6c84f101435c0763944f6344f4f4d5ef1b6e6be9a4d3a9a8c9b8ea8be2de5cb34759a94db8004ec97068fb0f84e",
-    "pcr1": "a9c7c6c84f101435c0763944f6344f4f4d5ef1b6e6be9a4d3a9a8c9b8ea8be2de5cb34759a94db8004ec97068fb0f84e",
+    "pcr0": "1d9494a7a284a4f7929e714c767352b0525ea167bc8be42e9e84522dad1bf78d1df32d994332be07cc46ae2f362852cd",
+    "pcr1": "1d9494a7a284a4f7929e714c767352b0525ea167bc8be42e9e84522dad1bf78d1df32d994332be07cc46ae2f362852cd",
     "pcr2": "21b9efbc184807662e966d34f390821309eeac6802309798826296bf3e8bec7c10edb30948c90ba67310f7b964fc500a"
   },
-  "enclave": {
-    "id": "0x4e2d83d163f8405d6f4b78b0371ca0657efaaa36fa84c7443f2d0912965f2845",
-    "cap": "0x1909cca40a5767891daa0c23dbbef0d8642d527f045524959e4cefe33d4969a9",
-    "ed25519_public_key": "bcd9d1c2f63264027c6ac975e45d785e20ad98e26f9635af953621a122556457"
-  },
-  "verified_end_to_end_tx": "9VegC6C1fEHE1B2yLtT7cMqcvvYyRUokaFDb16JFoMmH"
+  "verified_end_to_end_tx": "GvnjzkFHSbDcyAbSkwhwGh1zfbbW9rxr7tfsGKMz98WS",
+  "design_note": "Per-request flow uses a fresh AWS-Nitro-signed attestation document with user_data = SHA-256(BCS(ApplePayload)). The on-chain verifier checks PCRs, payload binding, and Nitro timestamp on every call. No per-request Ed25519 signature — the Nitro signature covers everything."
 }

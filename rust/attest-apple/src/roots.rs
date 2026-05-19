@@ -33,14 +33,13 @@ pub const APPLE_APP_ATTEST_ROOT_DER: &[u8] =
 
 /// Validate an x5c chain (leaf first, intermediate(s) after).
 ///
-/// Each cert is verified against the next-up cert's public key, and the
-/// top-most cert is verified against the pinned root. Returns the parsed
-/// leaf certificate on success.
+/// Each cert in the chain:
+///   * is signed by the next-up cert (the top is signed by the pinned root);
+///   * is within its `notBefore` / `notAfter` validity window at `clock_ms`;
+///   * is a CA where it needs to be (intermediates: BasicConstraints CA=true).
 ///
-/// **Note**: until [`APPLE_APP_ATTEST_ROOT_DER`] is populated, the root
-/// anchor check is skipped and a [`Error::UntrustedChain`] is logged. Chain
-/// validation between intermediates is still performed.
-pub fn validate_x5c_chain(x5c: &[Vec<u8>]) -> Result<Certificate> {
+/// Returns the parsed leaf certificate on success.
+pub fn validate_x5c_chain(x5c: &[Vec<u8>], clock_ms: u64) -> Result<Certificate> {
     if x5c.is_empty() {
         return Err(Error::EmptyX5c);
     }
@@ -50,19 +49,78 @@ pub fn validate_x5c_chain(x5c: &[Vec<u8>]) -> Result<Certificate> {
         .map(|c| Certificate::from_der(c).map_err(|e| Error::Der(format!("cert parse: {e}"))))
         .collect::<Result<_>>()?;
 
+    // Validity-period check on every cert (leaf + intermediates).
+    for cert in &certs {
+        check_validity(cert, clock_ms)?;
+    }
+
+    // BasicConstraints: every cert except the leaf must be a CA.
+    for cert in certs.iter().skip(1) {
+        check_is_ca(cert)?;
+    }
+
     // Inner chain: each cert must be signed by the next.
     for i in 0..certs.len().saturating_sub(1) {
         verify_signature(&certs[i], &certs[i + 1])?;
     }
 
     // Root anchor — the top of the supplied chain must be signed by the
-    // pinned Apple App Attestation Root CA.
+    // pinned Apple App Attestation Root CA. Validity + CA also checked.
     let root = Certificate::from_der(APPLE_APP_ATTEST_ROOT_DER)
         .map_err(|e| Error::Der(format!("pinned root parse: {e}")))?;
+    check_validity(&root, clock_ms)?;
+    check_is_ca(&root)?;
     let top = certs.last().expect("non-empty");
     verify_signature(top, &root)?;
 
     Ok(certs.into_iter().next().expect("non-empty"))
+}
+
+/// Reject any cert whose validity window doesn't include `now_ms`.
+fn check_validity(cert: &Certificate, now_ms: u64) -> Result<()> {
+    use std::time::{Duration, UNIX_EPOCH};
+    let validity = &cert.tbs_certificate.validity;
+    let nb = system_time_from_validity(validity.not_before)?;
+    let na = system_time_from_validity(validity.not_after)?;
+    let now = UNIX_EPOCH + Duration::from_millis(now_ms);
+    if now < nb {
+        return Err(Error::Der("cert not yet valid (notBefore in future)".into()));
+    }
+    if now > na {
+        return Err(Error::Der("cert expired (notAfter in past)".into()));
+    }
+    Ok(())
+}
+
+fn system_time_from_validity(t: x509_cert::time::Time) -> Result<std::time::SystemTime> {
+    use std::time::{Duration, UNIX_EPOCH};
+    let secs = match t {
+        x509_cert::time::Time::UtcTime(v) => v.to_unix_duration().as_secs(),
+        x509_cert::time::Time::GeneralTime(v) => v.to_unix_duration().as_secs(),
+    };
+    Ok(UNIX_EPOCH + Duration::from_secs(secs))
+}
+
+/// Require BasicConstraints CA=TRUE on intermediates and the root. Uses
+/// `x509_cert::ext::pkix::BasicConstraints` which handles the optional
+/// `pathLenConstraint` field correctly.
+fn check_is_ca(cert: &Certificate) -> Result<()> {
+    use const_oid::AssociatedOid as _;
+    use x509_cert::ext::pkix::BasicConstraints;
+
+    let ext = cert
+        .tbs_certificate
+        .extensions
+        .as_ref()
+        .and_then(|exts| exts.iter().find(|e| e.extn_id == BasicConstraints::OID))
+        .ok_or_else(|| Error::Der("missing BasicConstraints on CA cert".into()))?;
+
+    let bc = BasicConstraints::from_der(ext.extn_value.as_bytes())
+        .map_err(|e| Error::Der(format!("BasicConstraints parse: {e}")))?;
+    if !bc.ca {
+        return Err(Error::Der("BasicConstraints CA flag is false".into()));
+    }
+    Ok(())
 }
 
 /// Verify that `cert.signature` over `cert.tbsCertificate` is valid under
