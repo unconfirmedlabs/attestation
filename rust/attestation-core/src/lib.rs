@@ -1,22 +1,33 @@
 //! Shared outcome type for the attestation primitive family.
 //!
-//! Each per-platform Rust verifier produces an [`Outcome`] describing a
-//! successfully-verified hardware attestation. The outcome is BCS-encoded,
-//! signed by a trusted verifier (typically a Nautilus enclave), and submitted
-//! on-chain. The corresponding Move package decodes the BCS, verifies the
-//! signature, and emits a typed `Witness<Source>` for downstream consumers.
+//! Each per-platform Rust verifier returns an [`Outcome`] describing a
+//! successfully-verified hardware attestation. This struct is internal to
+//! the verifier toolchain — `enclave-server` reads its fields, constructs a
+//! per-platform `<Platform>Payload` (matching the Move-side struct exactly),
+//! BCS-encodes the payload, and binds `SHA-256(payload_bcs)` into the
+//! `user_data` field of a fresh AWS-Nitro-signed NSM attestation document.
 //!
-//! The fields are deliberately minimal: anything platform-specific lives in
+//! The on-chain Move side does NOT decode `Outcome`. It re-derives the
+//! payload BCS hash from individual fields submitted by the caller and
+//! checks it against the NSM doc's `user_data`. The Move verifier emits a
+//! typed `Witness<Source>` whose timestamp comes from the NSM document, not
+//! from any field in `Outcome`.
+//!
+//! Fields are deliberately minimal: anything platform-specific lives in
 //! `detail_hash` as a commitment, not as readable structured data.
 
 use serde::{Deserialize, Serialize};
 
 /// A successfully-verified attestation outcome.
 ///
-/// The on-chain Move representation of this struct must match the BCS layout
-/// produced here exactly: source (utf8 bytes, length-prefixed), attested_value
-/// (length-prefixed bytes), challenge (length-prefixed bytes), timestamp_ms
-/// (u64 LE), detail_hash (length-prefixed bytes).
+/// Internal to the verifier toolchain. `enclave-server` reads these fields
+/// individually and constructs a per-platform `<Platform>Payload` (a strict
+/// subset, with field order matching the Move struct) for the NSM `user_data`
+/// binding. The on-chain consumer never sees this struct.
+///
+/// The BCS roundtrip methods + the layout-stability test below exist so the
+/// struct can be cached or transported between Rust processes — they are
+/// NOT a load-bearing on-chain contract.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Outcome {
     /// Identifier of the attestation source.
@@ -90,7 +101,10 @@ mod tests {
 
     #[test]
     fn bcs_layout_is_stable() {
-        // Pin the BCS encoding so on-chain decoders stay in sync.
+        // Pin the BCS encoding of `Outcome` so cross-process callers that
+        // serialize/deserialize the struct don't drift. The on-chain trust
+        // path does NOT depend on this layout — each Move package binds to
+        // its own per-platform Payload BCS hash.
         let outcome = Outcome {
             source: "x".to_string(),
             attested_value: vec![1, 2, 3],
