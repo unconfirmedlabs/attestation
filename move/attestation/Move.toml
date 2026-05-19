@@ -3,8 +3,9 @@ name = "attestation"
 edition = "2024"
 license = "Apache-2.0"
 authors = ["Unconfirmed Labs, Inc. (os@unconfirmed.com)"]
+published-at = "0x5428972a680e966a3ba4a74f4e3a42e33073b16bc4f7db56f04b4b719690790f"
 
 [dependencies]
 
 [addresses]
-attestation = "0x0"
+attestation = "0x5428972a680e966a3ba4a74f4e3a42e33073b16bc4f7db56f04b4b719690790f"
