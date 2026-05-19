@@ -18,8 +18,8 @@ This repo ships the wheel.
 
 | Move package | Status | What it attests |
 |---|---|---|
-| `attestation` | **v0 scaffolded** | Base `Witness<Source>` type, used by all source packages |
-| `attest_apple` | **v0 scaffolded** | Apple App Attest — iOS Secure Enclave-backed P-256 keys (also accepts WebAuthn `fmt: "apple"` later) |
+| `attestation` | **v0 deployed** | Base `Witness<Source>` type, used by all source packages |
+| `attest_apple` | **v0 deployed** | Apple App Attest — iOS Secure Enclave-backed P-256 keys. Two peer modules: `attestation` (one-time hardware proof) and `assertion` (per-payload signature) |
 | `attest_android` | planned | Android Key Attestation — StrongBox / TEE-backed keys (also WebAuthn `fmt: "android-key"`) |
 | `attest_ntag` | planned | NXP NTAG 424 DNA originality signature — genuine NFC chips |
 | `attest_fido` | deferred | WebAuthn `fmt: "packed"` — security keys, self-attested authenticators |
@@ -27,8 +27,8 @@ This repo ships the wheel.
 | Rust crate | Status | Purpose |
 |---|---|---|
 | `attestation-core` | **v0** | Canonical `Outcome` struct with BCS serde — shared by every per-platform crate |
-| `attest-apple` | **v0** | Parse and verify Apple App Attest CBOR + X.509 chain to Apple's root |
-| `enclave-server` | **v0** | Reference HTTP server that runs verifiers and emits BCS+Ed25519-signed outcomes |
+| `attest-apple` | **v0** | Parse and verify Apple App Attest attestation + assertion. X.509 chain validation across P-256 leaf and P-384 intermediates against Apple's root |
+| `enclave-server` | **v0** | Reference HTTP server. Runs verifiers inside a Nitro enclave; every response carries a fresh NSM attestation document the Move side verifies on-chain |
 | `attest-android` | planned | Parse and verify Android Key Attestation cert extensions |
 | `attest-ntag` | planned | Verify NXP NTAG 424 originality signature (P-224 ECDSA against NXP's root) |
 | `attest-fido` | deferred | Parse and verify WebAuthn packed attestation |
@@ -86,16 +86,22 @@ This gives:
 
 ## Status
 
-- **2026-05**: repo bootstrapped, Apple App Attest verifier working end-to-end against real iPhone fixtures with Apple's root CA pinned. Move packages (`attestation` base + `attest_apple`) deployed to Sui testnet (see [`deployments/testnet.json`](./deployments/testnet.json)). Reference `enclave-server` binary exposes `/attest/apple` over HTTP and emits BCS+Ed25519-signed outcomes the Move side consumes directly.
-- **Next**: wrap the enclave server in a Nitro Enclave image (PCR-pinned, attested via `sui::nitro_attestation`); capture broader iPhone fixture coverage; begin `attest_ntag`.
+- **2026-05**: Apple App Attest verifier working end-to-end against real iPhone fixtures with Apple's root CA pinned. Both attestation and assertion verbs implemented. `enclave-server` runs inside an AWS Nitro Enclave on a `c6a.xlarge` host; each response carries a fresh NSM-signed attestation document the Move side verifies on-chain. Enclave registered via [`kagi`](https://github.com/unconfirmedlabs/kagi) — PCRs pinned in an immutable on-chain `Policy`. Full deploy + IDs in [`deployments/testnet.json`](./deployments/testnet.json), including the end-to-end Sui tx that verified a real iPhone attestation through the chain.
+- **Next**: capture broader iPhone fixture coverage; begin `attest_ntag`.
 - **Then**: `attest_android` and `attest_fido` once devices are on hand.
 
 ### Testnet deployment
 
+See [`deployments/testnet.json`](./deployments/testnet.json) for the canonical list.
+
 | Package | Package ID |
 |---|---|
-| `attestation` | `0x5428972a680e966a3ba4a74f4e3a42e33073b16bc4f7db56f04b4b719690790f` |
-| `attest_apple` | `0x75991f659fc203d340701818760eb0f36a1b9e01a020e15ec7f19e91a760da23` |
+| `attestation` | `0x63c21a61d4021cebf4fdac6d1b1d1832e5e5c3da017736494f9c0d24c11bfd0e` |
+| `attest_apple` | `0xfab0aa286d6e93794020597d20baada133dfb3a3992a070bfa010e0f78990137` |
+| `kagi` (enclave registry) | `0x68b0993136fdc5aa02275a3a0b51f93e9b7c3b601867ec4a8123a76503665161` |
+| Enclave `Policy` (PCR-pinned) | `0x5ce7b5ccec53698cec0a8cf2a631805069f51dca9c8cded853a1e0680f38bc34` |
+
+End-to-end verified tx (real iPhone attestation → enclave → on-chain `Witness<AppleAppAttest>`): [`EX4ZovBKn4G5w1q3nMkVHQuyuiz6RS24tGNcgZx2bCzs`](https://suiscan.xyz/testnet/tx/EX4ZovBKn4G5w1q3nMkVHQuyuiz6RS24tGNcgZx2bCzs).
 
 ## License
 
