@@ -72,10 +72,11 @@ The in-enclave server exposes:
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /health` | Liveness check. |
+| `GET /health` | Liveness check. Reports supported attestation sources. |
 | `GET /attestation` | Fresh NSM attestation document for this enclave. Used to register the enclave on-chain via `kagi`. |
 | `POST /attest/apple/attestation` | Verify an Apple App Attest one-time hardware proof. Returns a BCS-encoded outcome wrapped inside a fresh NSM document. |
 | `POST /attest/apple/assertion` | Verify an Apple App Attest per-payload assertion against a previously-attested public key. Same NSM-wrapped outcome shape. |
+| `POST /attest/android/attestation` | Verify an Android Key Attestation X.509 chain (TEE / StrongBox). Decodes the KeyMint `KeyDescription` extension, validates against Google's pinned attestation roots, applies the requested security-level / verified-boot policy. |
 
 Every verification response carries its own freshly-generated NSM attestation document. That means the Move side never trusts a long-lived enclave signature — each on-chain verify call re-checks PCR0/PCR1/PCR2 and the AWS Nitro root signature for this specific response. That's "maximum on-chain checking" by design.
 

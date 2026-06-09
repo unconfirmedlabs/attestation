@@ -25,3 +25,8 @@ public(package) fun new_app_attest(): AppleAppAttest {
 public(package) fun new_assertion(): AppleAssertion {
     AppleAssertion {}
 }
+
+// No Move unit tests: the marker structs are field-less `drop` witnesses with no
+// behaviour, and the `Witness<Source>` discrimination they enable is a compile-time
+// type property. Provenance is exercised end-to-end via `verify` (Rust crate /
+// integration test).

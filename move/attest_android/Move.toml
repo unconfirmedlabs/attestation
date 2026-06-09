@@ -1,0 +1,9 @@
+[package]
+name = "attest_android"
+edition = "2024"
+license = "Apache-2.0"
+authors = ["Unconfirmed Labs, Inc. (os@unconfirmed.com)"]
+
+[dependencies]
+attestation = { local = "../attestation" }
+kagi = { git = "https://github.com/unconfirmedlabs/kagi.git", subdir = "move", rev = "main" }

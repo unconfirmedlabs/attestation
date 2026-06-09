@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "rust/attestation-core",
     "rust/attest-apple",
+    "rust/attest-android",
     "rust/enclave-server",
 ]
 
@@ -16,6 +17,7 @@ repository = "https://github.com/unconfirmedlabs/attestation"
 # Crypto
 p256 = { version = "0.13", features = ["ecdsa", "pem"] }
 p384 = { version = "0.13", features = ["ecdsa", "pem"] }
+rsa = { version = "0.9", features = ["sha2"] }
 sha2 = "0.10"
 
 # Encoding

@@ -133,3 +133,236 @@ fn decode_assertion(bytes: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
 fn _touch_cbor() {
     let _ = cbor::decode_attestation_object;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use p256::ecdsa::{signature::hazmat::PrehashSigner as _, DerSignature, SigningKey};
+    use sha2::{Digest, Sha256};
+
+    const APP_ID: &str = "5354N269JS.com.unconfirmedlabs.attestkitdemo";
+    const CLOCK: u64 = 1_779_200_000_000;
+
+    /// Build a 37-byte minimal `authenticatorData`: rpIdHash(32) | flags(1) | signCount(4).
+    fn auth_data_for(app_id: &str, sign_count: u32) -> Vec<u8> {
+        let rp: [u8; 32] = Sha256::digest(app_id.as_bytes()).into();
+        let mut buf = Vec::with_capacity(37);
+        buf.extend_from_slice(&rp);
+        buf.push(0x00); // flags
+        buf.extend_from_slice(&sign_count.to_be_bytes());
+        buf
+    }
+
+    /// Encode a `{signature, authenticatorData}` CBOR assertion blob.
+    fn encode_assertion(signature: &[u8], auth_data: &[u8]) -> Vec<u8> {
+        let map = Value::Map(vec![
+            (
+                Value::Text("signature".into()),
+                Value::Bytes(signature.to_vec()),
+            ),
+            (
+                Value::Text("authenticatorData".into()),
+                Value::Bytes(auth_data.to_vec()),
+            ),
+        ]);
+        let mut out = Vec::new();
+        ciborium::into_writer(&map, &mut out).unwrap();
+        out
+    }
+
+    /// Sign the digest the verifier expects: SHA256(authData || SHA256(client_data)).
+    fn sign(key: &SigningKey, auth_data: &[u8], client_data: &[u8]) -> Vec<u8> {
+        let client_data_hash: [u8; 32] = Sha256::digest(client_data).into();
+        let mut hasher = Sha256::new();
+        hasher.update(auth_data);
+        hasher.update(client_data_hash);
+        let digest: [u8; 32] = hasher.finalize().into();
+        let sig: DerSignature = key.sign_prehash(&digest).unwrap();
+        sig.as_bytes().to_vec()
+    }
+
+    /// Deterministic signing key + its SEC1 uncompressed (65-byte) public key.
+    fn keypair() -> (SigningKey, Vec<u8>) {
+        // Fixed scalar so the test is reproducible.
+        let sk = SigningKey::from_bytes(&[0x42u8; 32].into()).unwrap();
+        let pk = sk
+            .verifying_key()
+            .to_encoded_point(false)
+            .as_bytes()
+            .to_vec();
+        assert_eq!(pk.len(), 65);
+        assert_eq!(pk[0], 0x04);
+        (sk, pk)
+    }
+
+    #[test]
+    fn happy_path_valid_assertion_verifies() {
+        let (sk, pk) = keypair();
+        let client_data = b"per-action payload for this assertion";
+        let auth_data = auth_data_for(APP_ID, 1);
+        let sig = sign(&sk, &auth_data, client_data);
+        let blob = encode_assertion(&sig, &auth_data);
+
+        let outcome = verify_assertion(&blob, client_data, &pk, APP_ID, CLOCK).unwrap();
+        assert_eq!(outcome.source, sources::APPLE_APP_ATTEST_ASSERTION);
+        assert_eq!(outcome.attested_value, pk);
+        assert_eq!(outcome.challenge, client_data.to_vec());
+        assert_eq!(outcome.timestamp_ms, CLOCK);
+        // detail_hash commits to the raw blob.
+        assert_eq!(outcome.detail_hash, Sha256::digest(&blob).to_vec());
+    }
+
+    #[test]
+    fn wrong_attested_key_rejected() {
+        // Sign with `sk`, but present a DIFFERENT key as the attested key.
+        let (sk, _pk) = keypair();
+        let other = SigningKey::from_bytes(&[0x07u8; 32].into()).unwrap();
+        let other_pk = other
+            .verifying_key()
+            .to_encoded_point(false)
+            .as_bytes()
+            .to_vec();
+        let client_data = b"payload";
+        let auth_data = auth_data_for(APP_ID, 1);
+        let sig = sign(&sk, &auth_data, client_data);
+        let blob = encode_assertion(&sig, &auth_data);
+
+        let err = verify_assertion(&blob, client_data, &other_pk, APP_ID, CLOCK).unwrap_err();
+        assert!(matches!(err, Error::UntrustedChain), "got {err:?}");
+    }
+
+    #[test]
+    fn tampered_signature_rejected() {
+        let (sk, pk) = keypair();
+        let client_data = b"payload";
+        let auth_data = auth_data_for(APP_ID, 1);
+        let mut sig = sign(&sk, &auth_data, client_data);
+        // Flip a byte deep in the DER signature so it still parses but won't verify.
+        let last = sig.len() - 1;
+        sig[last] ^= 0x01;
+        let blob = encode_assertion(&sig, &auth_data);
+
+        let err = verify_assertion(&blob, client_data, &pk, APP_ID, CLOCK).unwrap_err();
+        // Either it parses-but-fails-to-verify (UntrustedChain) or the DER is
+        // rejected outright (Der). Both are correct rejections.
+        assert!(
+            matches!(err, Error::UntrustedChain | Error::Der(_)),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn wrong_client_data_rejected() {
+        // Signature is over `client_data`, but we verify against `other` bytes.
+        let (sk, pk) = keypair();
+        let auth_data = auth_data_for(APP_ID, 1);
+        let sig = sign(&sk, &auth_data, b"the real payload");
+        let blob = encode_assertion(&sig, &auth_data);
+
+        let err = verify_assertion(&blob, b"a different payload", &pk, APP_ID, CLOCK).unwrap_err();
+        assert!(matches!(err, Error::UntrustedChain), "got {err:?}");
+    }
+
+    #[test]
+    fn tampered_auth_data_breaks_signature() {
+        // Mutating signCount in authData after signing invalidates the signature,
+        // because the signed digest covers the full authData.
+        let (sk, pk) = keypair();
+        let client_data = b"payload";
+        let auth_data = auth_data_for(APP_ID, 1);
+        let sig = sign(&sk, &auth_data, client_data);
+        let mut tampered = auth_data.clone();
+        tampered[36] ^= 0xFF; // last byte of signCount
+        let blob = encode_assertion(&sig, &tampered);
+
+        let err = verify_assertion(&blob, client_data, &pk, APP_ID, CLOCK).unwrap_err();
+        assert!(matches!(err, Error::UntrustedChain), "got {err:?}");
+    }
+
+    #[test]
+    fn wrong_app_id_rejected_before_signature_check() {
+        // rpIdHash mismatch must short-circuit (RpIdHashMismatch), even with a
+        // perfectly valid signature for the *signed* app_id.
+        let (sk, pk) = keypair();
+        let client_data = b"payload";
+        let auth_data = auth_data_for(APP_ID, 1);
+        let sig = sign(&sk, &auth_data, client_data);
+        let blob = encode_assertion(&sig, &auth_data);
+
+        let err =
+            verify_assertion(&blob, client_data, &pk, "OTHER.app.id", CLOCK).unwrap_err();
+        assert!(matches!(err, Error::RpIdHashMismatch), "got {err:?}");
+    }
+
+    #[test]
+    fn auth_data_too_short_rejected() {
+        let (sk, pk) = keypair();
+        // 36-byte authData (one short of the 37-byte minimum).
+        let short = vec![0u8; 36];
+        let sig = sign(&sk, &short, b"x");
+        let blob = encode_assertion(&sig, &short);
+
+        let err = verify_assertion(&blob, b"x", &pk, APP_ID, CLOCK).unwrap_err();
+        assert!(matches!(err, Error::Cbor(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn assertion_not_cbor_map_rejected() {
+        // A bare CBOR array, not a map.
+        let mut blob = Vec::new();
+        ciborium::into_writer(&Value::Array(vec![Value::Integer(1.into())]), &mut blob).unwrap();
+        let err = verify_assertion(&blob, b"x", &[0u8; 65], APP_ID, CLOCK).unwrap_err();
+        assert!(matches!(err, Error::Cbor(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn assertion_missing_signature_field_rejected() {
+        let auth_data = auth_data_for(APP_ID, 1);
+        let map = Value::Map(vec![(
+            Value::Text("authenticatorData".into()),
+            Value::Bytes(auth_data),
+        )]);
+        let mut blob = Vec::new();
+        ciborium::into_writer(&map, &mut blob).unwrap();
+        let err = verify_assertion(&blob, b"x", &[0u8; 65], APP_ID, CLOCK).unwrap_err();
+        assert!(matches!(err, Error::Cbor(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn assertion_missing_auth_data_field_rejected() {
+        let map = Value::Map(vec![(
+            Value::Text("signature".into()),
+            Value::Bytes(vec![0x30, 0x06]),
+        )]);
+        let mut blob = Vec::new();
+        ciborium::into_writer(&map, &mut blob).unwrap();
+        let err = verify_assertion(&blob, b"x", &[0u8; 65], APP_ID, CLOCK).unwrap_err();
+        assert!(matches!(err, Error::Cbor(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn truncated_cbor_rejected() {
+        let (sk, pk) = keypair();
+        let client_data = b"payload";
+        let auth_data = auth_data_for(APP_ID, 1);
+        let sig = sign(&sk, &auth_data, client_data);
+        let blob = encode_assertion(&sig, &auth_data);
+        // Truncate to half — decoder must error, not panic.
+        let truncated = &blob[..blob.len() / 2];
+        let err = verify_assertion(truncated, client_data, &pk, APP_ID, CLOCK).unwrap_err();
+        assert!(matches!(err, Error::Cbor(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn unparseable_attested_key_rejected() {
+        // Valid blob shape, but the attested key is not a valid SEC1 point.
+        let (sk, _pk) = keypair();
+        let client_data = b"payload";
+        let auth_data = auth_data_for(APP_ID, 1);
+        let sig = sign(&sk, &auth_data, client_data);
+        let blob = encode_assertion(&sig, &auth_data);
+        let bad_key = [0u8; 65]; // 0x00 prefix is not a valid uncompressed point
+        let err = verify_assertion(&blob, client_data, &bad_key, APP_ID, CLOCK).unwrap_err();
+        assert!(matches!(err, Error::Der(_)), "got {err:?}");
+    }
+}

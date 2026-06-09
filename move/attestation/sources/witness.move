@@ -56,3 +56,81 @@ public fun detail_hash<S>(w: &Witness<S>): &vector<u8> { &w.detail_hash }
 /// "which attestation source produced this witness" when persisting it to an
 /// object on-chain.
 public fun source<S>(_w: &Witness<S>): TypeName { type_name::with_defining_ids<S>() }
+
+// === Tests ===
+
+// The witness pattern itself (only a holder of `Source` can call `new<Source>`)
+// is a compile-time guarantee, not a runtime one, so it cannot be exercised by
+// a `#[test]`. We instead cover that two *distinct* markers produce witnesses
+// whose `source()` is distinguishable, which is the observable consequence of
+// that pattern.
+
+#[test_only] use std::unit_test::assert_eq;
+#[test_only] public struct TestSource has drop {}
+#[test_only] public struct OtherSource has drop {}
+
+#[test_only] const PK: vector<u8> = b"device-public-key";
+#[test_only] const CHALLENGE: vector<u8> = b"server-nonce";
+#[test_only] const DETAIL: vector<u8> = b"sha256-of-blob";
+
+/// Every accessor returns exactly what was passed into `new`.
+#[test]
+fun test_new_accessors_roundtrip() {
+    let w = new(TestSource {}, PK, CHALLENGE, 1_700_000_000_000, DETAIL);
+    assert_eq!(*w.attested_value(), PK);
+    assert_eq!(*w.challenge(), CHALLENGE);
+    assert_eq!(w.timestamp_ms(), 1_700_000_000_000);
+    assert_eq!(*w.detail_hash(), DETAIL);
+}
+
+/// `source()` returns the canonical `TypeName` for the marker, matching
+/// `type_name::with_defining_ids` for the same type argument.
+#[test]
+fun test_source_is_canonical_type_name() {
+    let w = new(TestSource {}, PK, CHALLENGE, 0, DETAIL);
+    assert_eq!(w.source(), type_name::with_defining_ids<TestSource>());
+}
+
+/// Distinct `Source` markers yield witnesses with distinguishable `source()`,
+/// the observable consequence of the witness pattern.
+#[test]
+fun test_distinct_sources_are_distinguishable() {
+    let a = new(TestSource {}, PK, CHALLENGE, 0, DETAIL);
+    let b = new(OtherSource {}, PK, CHALLENGE, 0, DETAIL);
+    assert!(a.source() != b.source());
+    // Each still equals its own canonical type name.
+    assert_eq!(a.source(), type_name::with_defining_ids<TestSource>());
+    assert_eq!(b.source(), type_name::with_defining_ids<OtherSource>());
+}
+
+/// Empty byte vectors are accepted and round-trip unchanged for every
+/// `vector<u8>` field.
+#[test]
+fun test_empty_byte_fields() {
+    let empty = vector<u8>[];
+    let w = new(TestSource {}, empty, empty, 42, empty);
+    assert_eq!(*w.attested_value(), empty);
+    assert_eq!(*w.challenge(), empty);
+    assert_eq!(*w.detail_hash(), empty);
+    assert_eq!(w.timestamp_ms(), 42);
+}
+
+/// Timestamp boundary values (0 and u64::MAX) round-trip unchanged.
+#[test]
+fun test_timestamp_boundaries() {
+    let zero = new(TestSource {}, PK, CHALLENGE, 0, DETAIL);
+    assert_eq!(zero.timestamp_ms(), 0);
+
+    let max = new(TestSource {}, PK, CHALLENGE, 18_446_744_073_709_551_615, DETAIL);
+    assert_eq!(max.timestamp_ms(), 18_446_744_073_709_551_615);
+}
+
+/// The `Witness` struct has `drop`: it can be created and silently discarded
+/// without explicit destruction. (If it lacked `drop`, this test would not
+/// compile.) `store` is exercised by `device_binding`, which embeds a
+/// `Witness` inside a stored object.
+#[test]
+fun test_witness_has_drop() {
+    let _w = new(TestSource {}, PK, CHALLENGE, 1, DETAIL);
+    // falls out of scope and is dropped — no `destroy` needed.
+}
