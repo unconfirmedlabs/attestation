@@ -1,0 +1,8 @@
+[package]
+name = "device_binding_secp256k1"
+edition = "2024"
+license = "Apache-2.0"
+authors = ["Unconfirmed Labs, Inc. (os@unconfirmed.com)"]
+
+[dependencies]
+device_binding = { local = "../device_binding" }
