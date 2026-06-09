@@ -131,3 +131,10 @@ fun assert_pcrs_match(
     };
     assert!(found_0 && found_1 && found_2, EWrongPcr);
 }
+
+// No Move unit tests. `verify` / `assert_pcrs_match` consume a
+// `NitroAttestationDocument`, unconstructible under `sui move test` (only the
+// `load_nitro_attestation` native mints one, from a real AWS-signed blob). The
+// Android Key Attestation crypto is tested in the Rust `attest-android` crate;
+// end-to-end `verify` is covered by an integration test against a real fixture. No
+// tautological payload/BCS tests are added.

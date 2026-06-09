@@ -147,3 +147,7 @@ fun assert_pcrs_match(
     };
     assert!(found_0 && found_1 && found_2, EWrongPcr);
 }
+
+// No Move unit tests — same reason as `attest_apple::attestation`: `verify` needs a
+// real `NitroAttestationDocument` + `EnclavePolicy`, unconstructible under
+// `sui move test`. Covered by the Rust `attest-apple` crate + an integration test.

@@ -16,7 +16,6 @@ use attest_android::{
     key_description::KeyDescription, verify_attestation, Error, Policy, SecurityLevel,
 };
 use std::fs;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 fn pem_to_der(path: &str) -> Vec<u8> {
     let pem = fs::read_to_string(path).expect("read pem");
@@ -35,11 +34,16 @@ fn ec_tee_chain() -> Vec<Vec<u8>> {
     .collect()
 }
 
+/// Fixed verifier clock inside the EC TEE sample chain's validity window.
+///
+/// The sample certs were issued in 2018 and the narrowest validity window
+/// (`ec_tee_cert3`, the embedded Google root) expires 2026-05-24, so a real
+/// wall-clock `now()` no longer falls inside the chain. Anchoring also
+/// validates the pinned RSA root (notBefore 2022-03-20), so the usable window
+/// is [2022-03-20, 2026-05-24]; `2024-01-01T00:00:00Z` sits inside it. See
+/// `VALID_CLOCK_MS` in `coverage.rs` for the full validity-window analysis.
 fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0)
+    1_704_067_200_000 // 2024-01-01T00:00:00Z
 }
 
 fn extract_leaf_challenge() -> Vec<u8> {

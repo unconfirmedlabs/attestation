@@ -150,3 +150,12 @@ fun assert_pcrs_match(
     };
     assert!(found_0 && found_1 && found_2, EWrongPcr);
 }
+
+// No Move unit tests. `verify` consumes a `NitroAttestationDocument` (mintable only
+// from a real AWS-signed blob via the `load_nitro_attestation` native) and an
+// `EnclavePolicy<ATTESTATION>` (needs the `ATTESTATION` OTW) — neither is
+// constructible under `sui move test`, and the rest of the module is data with no
+// branching logic. The App Attest crypto is tested in the Rust `attest-apple` crate;
+// end-to-end `verify` is covered by a deploy-time integration test against a live
+// enclave + on-chain policy. We do not add tautological payload/BCS tests that would
+// only re-assert framework behaviour.
