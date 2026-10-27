@@ -66,7 +66,9 @@ public fun source<S>(_w: &Witness<S>): TypeName { type_name::with_defining_ids<S
 // that pattern.
 
 #[test_only] use std::unit_test::assert_eq;
+
 #[test_only] public struct TestSource has drop {}
+
 #[test_only] public struct OtherSource has drop {}
 
 #[test_only] const PK: vector<u8> = b"device-public-key";

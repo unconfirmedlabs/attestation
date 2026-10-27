@@ -13,7 +13,6 @@ use device_binding::device_binding::{Self, Verified};
 
 /// The signature did not verify under the device key.
 const EBadSignature: u64 = 0;
-
 /// `hash` selector for `ecdsa_r1` (0 = keccak256, 1 = sha256).
 const SHA256: u8 = 1;
 
@@ -52,7 +51,6 @@ fun compress(uncompressed: &vector<u8>): vector<u8> {
 #[test_only] const TEST_PK: vector<u8> = x"041c7650d32da9bd74ce2acad51fad14f7dd2359511cdb2dea24dd256ef70655d96c6522ceceb15d5b923d78ca4ad2d6b0b60a20fedba20cc6b725228afba5f9e7";
 #[test_only] const TEST_SIG: vector<u8> = x"a0ff0691c3eb057dd78b652fdda0c635f5f1c2127629e04a939a7eafa6489429337332bddc50a5b2571bdaf132e39412ee0cab7abd6fad1a5f5a7fd3fb059258";
 #[test_only] const TEST_COMPRESSED: vector<u8> = x"031c7650d32da9bd74ce2acad51fad14f7dd2359511cdb2dea24dd256ef70655d9";
-
 // Synthetic X9.63-shaped key whose final byte (0x40) is even → compressed prefix 0x02. Not an on-curve
 // point; only used to drive the even-parity branch of `compress` (a pure byte op that never touches the
 // curve) and as a "wrong pk" for `verify` (secp256r1_verify returns false → `verify` aborts EBadSignature).

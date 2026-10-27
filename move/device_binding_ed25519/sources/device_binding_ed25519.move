@@ -42,7 +42,6 @@ public fun verify(pk: vector<u8>, message: vector<u8>, signature: vector<u8>): V
 // compressed Edwards point; sig is 64-byte R‖S. The native verifier is the oracle — these bytes pass it.
 #[test_only] const TEST_PK: vector<u8> = x"d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737";
 #[test_only] const TEST_SIG: vector<u8> = x"a50fa1f60a1635c69b078e0a16ebdadb16332f3037ad8c1703ed5572feebc1a7d57ea53bdbbb7e3cdd42b83c6431cc22ee6f8fba4c5a08f44680505a0129d805";
-
 // A second, independent real vector: a different key signs the RAW bytes of b"miso-binding-test-2".
 // Demonstrates the verifier is general, not fitted to one fixture. Also serves as a "wrong pk".
 #[test_only] const TEST_PK2: vector<u8> = x"a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0";

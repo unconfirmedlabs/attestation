@@ -22,7 +22,6 @@ use std::bcs;
 use std::hash;
 use sui::clock::Clock;
 use sui::nitro_attestation::{Self, NitroAttestationDocument, PCREntry};
-
 use attestation::attestation::ATTESTATION;
 use attestation::witness::{Self, Witness};
 use attest_android::source::{Self, AndroidKeyAttestation};
@@ -79,7 +78,6 @@ public fun verify(
     clock: &Clock,
 ): Witness<AndroidKeyAttestation> {
     assert_pcrs_match(policy, &doc);
-
     let payload = AndroidPayload { attested_value, challenge, detail_hash };
     let payload_bcs = bcs::to_bytes(&payload);
     let expected_hash = hash::sha2_256(payload_bcs);
@@ -94,7 +92,6 @@ public fun verify(
 
     let pk = nitro_attestation::public_key(&doc);
     assert!(pk.is_some(), EMissingPublicKey);
-
     witness::new(
         source::new_android_key_attestation(),
         payload.attested_value,

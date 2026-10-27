@@ -39,7 +39,6 @@ use std::bcs;
 use std::hash;
 use sui::clock::Clock;
 use sui::nitro_attestation::{Self, NitroAttestationDocument, PCREntry};
-
 use attestation::attestation::ATTESTATION;
 use attestation::witness::{Self, Witness};
 use attest_apple::source::{Self, AppleAssertion};
@@ -87,7 +86,6 @@ public fun verify(
 ): Witness<AppleAssertion> {
     // 1. PCRs match the policy → proves the enclave image is ours.
     assert_pcrs_match(policy, &doc);
-
     // 2. user_data binds the Nitro doc to this exact (key, client_data).
     let payload = AssertionPayload { attested_key, client_data };
     let payload_bcs = bcs::to_bytes(&payload);
@@ -105,7 +103,6 @@ public fun verify(
     // 4. Sanity: doc has the enclave's pk embedded.
     let pk = nitro_attestation::public_key(&doc);
     assert!(pk.is_some(), EMissingPublicKey);
-
     // 5. Emit the typed witness. Field convention for AppleAssertion:
     //    attested_value = SE pk
     //    challenge      = client_data (what was signed)

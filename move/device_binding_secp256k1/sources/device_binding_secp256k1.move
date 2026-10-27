@@ -13,7 +13,6 @@ use device_binding::device_binding::{Self, Verified};
 
 /// The signature did not verify under the device key.
 const EBadSignature: u64 = 0;
-
 /// `hash` selector for `ecdsa_k1` (0 = keccak256, 1 = sha256). SHA256 matches the secp256r1 sibling, so
 /// the signer must hash the message with the same function it used to produce the signature.
 const SHA256: u8 = 1;
@@ -53,7 +52,6 @@ fun compress(uncompressed: &vector<u8>): vector<u8> {
 #[test_only] const TEST_PK: vector<u8> = x"04802ce867524d4ca1c63e78983a4838c3b37395bb8febf54253791654e4c8e2d12e8dc010ac3d83ad3b5292d89f5c0aea218f424da6652b6f7f5914f7dd36ce69";
 #[test_only] const TEST_SIG: vector<u8> = x"f6f1340f587c5d004e2bd3639e477b1b058057fd3744b356a0754c5a51b0ae692493a9f6f1d6b73ae4efb78380da4623ec85b8278f29d735258916e875c32d2e";
 #[test_only] const TEST_COMPRESSED: vector<u8> = x"03802ce867524d4ca1c63e78983a4838c3b37395bb8febf54253791654e4c8e2d1";
-
 // A second real on-curve secp256k1 key (not the signer). Byte 64 is 0x3e (even) → compressed prefix 0x02,
 // so this fixture drives the even-parity branch of `compress`. It is also a genuine "wrong pk" for `verify`:
 // secp256k1_verify against this key returns false → `verify` aborts EBadSignature.

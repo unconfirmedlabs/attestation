@@ -22,7 +22,6 @@ use attestation::witness::{Self, Witness};
 
 /// The supplied public key does not match the attested key in the witness.
 const EKeyMismatch: u64 = 0;
-
 /// Domain-separation prefix mixed into every signed message (package · verb · version).
 const MESSAGE_PREFIX: vector<u8> = b"device_binding::verify_action::v1";
 
@@ -135,6 +134,7 @@ public fun destroy<Source, Scheme>(binding: DeviceBinding<Source, Scheme>) {
 // === Accessors ===
 
 public fun pk<Source, Scheme>(binding: &DeviceBinding<Source, Scheme>): &vector<u8> { &binding.pk }
+
 public fun issued_at_ms<Source, Scheme>(binding: &DeviceBinding<Source, Scheme>): u64 { binding.issued_at_ms }
 
 // === Internal ===
@@ -154,8 +154,11 @@ fun canonical_message(binding_id: ID, domain: vector<u8>, action_hash: vector<u8
 #[test_only] use sui::clock;
 #[test_only] use sui::test_scenario;
 #[test_only] use std::unit_test::assert_eq;
+
 #[test_only] public struct TestSource has drop {}
+
 #[test_only] public struct TestScheme has drop {}
+
 #[test_only] const TEST_PK: vector<u8> = b"device-public-key";
 
 #[test_only]

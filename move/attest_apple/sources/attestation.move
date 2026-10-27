@@ -33,7 +33,6 @@ use std::bcs;
 use std::hash;
 use sui::clock::Clock;
 use sui::nitro_attestation::{Self, NitroAttestationDocument, PCREntry};
-
 use attestation::attestation::ATTESTATION;
 use attestation::witness::{Self, Witness};
 use attest_apple::source::{Self, AppleAppAttest};
@@ -86,7 +85,6 @@ public fun verify(
     // 1. PCRs must match the policy. This is what proves the document came
     //    from our pinned enclave image, not an attacker's image.
     assert_pcrs_match(policy, &doc);
-
     // 2. The doc's user_data must bind to this exact payload. Otherwise
     //    a stale doc could be paired with a fresh payload.
     let payload = ApplePayload { attested_value, challenge, detail_hash };
@@ -110,7 +108,6 @@ public fun verify(
     //    but downstream consumers may want it for their own protocols.
     let pk = nitro_attestation::public_key(&doc);
     assert!(pk.is_some(), EMissingPublicKey);
-
     // 5. Emit the typed witness with the Nitro timestamp.
     witness::new(
         source::new_app_attest(),
