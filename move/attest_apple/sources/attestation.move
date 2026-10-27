@@ -93,7 +93,6 @@ public fun verify(
     let user_data = nitro_attestation::user_data(&doc);
     assert!(user_data.is_some(), EMissingUserData);
     assert!(user_data.borrow() == &expected_hash, EPayloadMismatch);
-
     // 3. The Nitro-signed timestamp is the freshness anchor. Unlike the
     //    enclave's wall clock, the Nitro timestamp is signed by AWS and
     //    cannot be spoofed by the parent EC2 host.
@@ -101,7 +100,6 @@ public fun verify(
     let now = clock.timestamp_ms();
     assert!(nsm_ts + MAX_OUTCOME_AGE_MS >= now, EStaleOutcome);
     assert!(nsm_ts <= now + MAX_CLOCK_SKEW_MS, EFutureOutcome);
-
     // 4. Sanity-check that the doc has a public key (i.e., the enclave
     //    embedded an Ed25519 pk). We don't verify any signature with it
     //    on this path — the NSM signature already covers everything —

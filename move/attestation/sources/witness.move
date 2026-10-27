@@ -121,7 +121,6 @@ fun test_empty_byte_fields() {
 fun test_timestamp_boundaries() {
     let zero = new(TestSource {}, PK, CHALLENGE, 0, DETAIL);
     assert_eq!(zero.timestamp_ms(), 0);
-
     let max = new(TestSource {}, PK, CHALLENGE, 18_446_744_073_709_551_615, DETAIL);
     assert_eq!(max.timestamp_ms(), 18_446_744_073_709_551_615);
 }

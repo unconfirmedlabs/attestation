@@ -84,12 +84,10 @@ public fun verify(
     let user_data = nitro_attestation::user_data(&doc);
     assert!(user_data.is_some(), EMissingUserData);
     assert!(user_data.borrow() == &expected_hash, EPayloadMismatch);
-
     let nsm_ts = *nitro_attestation::timestamp(&doc);
     let now = clock.timestamp_ms();
     assert!(nsm_ts + MAX_OUTCOME_AGE_MS >= now, EStaleOutcome);
     assert!(nsm_ts <= now + MAX_CLOCK_SKEW_MS, EFutureOutcome);
-
     let pk = nitro_attestation::public_key(&doc);
     assert!(pk.is_some(), EMissingPublicKey);
     witness::new(

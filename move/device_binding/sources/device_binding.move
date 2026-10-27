@@ -238,7 +238,6 @@ fun test_new_emits_device_bound_event() {
     let clk = clock::create_for_testing(scenario.ctx());
     let binding = fresh_binding(&clk, scenario.ctx());
     let id = object::id(&binding);
-
     // One DeviceBoundEvent, carrying the binding id and the source/scheme type names.
     assert_eq!(event::num_events(), 1);
     let evs = event::events_by_type<DeviceBoundEvent>();
@@ -246,7 +245,6 @@ fun test_new_emits_device_bound_event() {
     assert_eq!(evs[0].binding_id, id);
     assert!(evs[0].source.length() > 0);
     assert!(evs[0].scheme.length() > 0);
-
     destroy(binding);
     clk.destroy_for_testing();
     scenario.end();
@@ -442,19 +440,16 @@ fun test_transfer_to_lands_at_recipient() {
     let holder = @0xCAFE;
     let mut scenario = test_scenario::begin(@0xA);
     let clk = clock::create_for_testing(scenario.ctx());
-
     scenario.next_tx(@0xA);
     let binding = fresh_binding(&clk, scenario.ctx());
     let id = object::id(&binding);
     transfer_to(binding, holder);
-
     // The binding is owned by the holder and takeable there in a later tx.
     scenario.next_tx(holder);
     assert!(test_scenario::has_most_recent_for_address<DeviceBinding<TestSource, TestScheme>>(holder));
     let taken = scenario.take_from_address<DeviceBinding<TestSource, TestScheme>>(holder);
     assert_eq!(object::id(&taken), id);
     assert_eq!(*taken.pk(), TEST_PK);
-
     destroy(taken);
     clk.destroy_for_testing();
     scenario.end();
@@ -466,16 +461,13 @@ fun test_transfer_to_not_at_other_address() {
     let stranger = @0xBEEF;
     let mut scenario = test_scenario::begin(@0xA);
     let clk = clock::create_for_testing(scenario.ctx());
-
     scenario.next_tx(@0xA);
     let binding = fresh_binding(&clk, scenario.ctx());
     transfer_to(binding, holder);
-
     // Soulbound: it sits with the holder only — no copy lands anywhere else.
     scenario.next_tx(stranger);
     assert!(!test_scenario::has_most_recent_for_address<DeviceBinding<TestSource, TestScheme>>(stranger));
     assert!(test_scenario::has_most_recent_for_address<DeviceBinding<TestSource, TestScheme>>(holder));
-
     let taken = scenario.take_from_address<DeviceBinding<TestSource, TestScheme>>(holder);
     destroy(taken);
     clk.destroy_for_testing();
@@ -488,18 +480,14 @@ fun test_transfer_to_not_at_other_address() {
 fun test_destroy_emits_event() {
     let mut scenario = test_scenario::begin(@0xA);
     let clk = clock::create_for_testing(scenario.ctx());
-
     let binding = fresh_binding(&clk, scenario.ctx());
     let id = object::id(&binding);
-
     // Isolate the destroy tx so its event count is unambiguous.
     scenario.next_tx(@0xA);
     destroy(binding);
-
     let evs = event::events_by_type<DeviceBindingDestroyedEvent>();
     assert_eq!(evs.length(), 1);
     assert_eq!(evs[0].binding_id, id);
-
     clk.destroy_for_testing();
     scenario.end();
 }
@@ -511,19 +499,15 @@ fun test_destroy_removes_object_from_recipient() {
     let holder = @0xCAFE;
     let mut scenario = test_scenario::begin(@0xA);
     let clk = clock::create_for_testing(scenario.ctx());
-
     scenario.next_tx(@0xA);
     let binding = fresh_binding(&clk, scenario.ctx());
     transfer_to(binding, holder);
-
     scenario.next_tx(holder);
     let taken = scenario.take_from_address<DeviceBinding<TestSource, TestScheme>>(holder);
     destroy(taken);
-
     let effects = scenario.next_tx(holder);
     assert_eq!(effects.num_user_events(), 1);
     assert!(!test_scenario::has_most_recent_for_address<DeviceBinding<TestSource, TestScheme>>(holder));
-
     clk.destroy_for_testing();
     scenario.end();
 }
