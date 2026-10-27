@@ -13,6 +13,7 @@ use device_binding::device_binding::{Self, Verified};
 
 /// The signature did not verify under the device key.
 const EBadSignature: u64 = 0;
+
 /// `hash` selector for `ecdsa_r1` (0 = keccak256, 1 = sha256).
 const SHA256: u8 = 1;
 
